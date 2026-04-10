@@ -1,0 +1,51 @@
+{
+  "name": "clone-sidekick",
+  "version": "1.0.0",
+  "description": "A web-based Clone Hero chart browser and downloader — search and install songs from Enchor.us via any browser on your LAN or WAN.",
+  "private": true,
+  "license": "GPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently \"pnpm run dev:server\" \"pnpm run dev:client\"",
+    "dev:server": "tsx watch src/server/index.ts",
+    "dev:client": "vite",
+    "build": "vite build",
+    "start": "tsx src/server/index.ts",
+    "tunnel": "cloudflared tunnel --config cloudflared.yml run",
+    "start:all": "concurrently \"pnpm start\" \"pnpm run tunnel\"",
+    "setup": "pnpm install"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "chart-preview": "^1.3.0",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "express-session": "^1.19.0",
+    "parse-sng": "^4.0.3",
+    "passport": "^0.7.0",
+    "passport-google-oauth20": "^2.0.0",
+    "sanitize-filename": "^1.6.4",
+    "yauzl-promise": "^4.0.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.2.2",
+    "@types/express": "^5.0.6",
+    "@types/express-session": "^1.18.2",
+    "@types/node": "^25.5.0",
+    "@types/passport": "^1.0.17",
+    "@types/passport-google-oauth20": "^2.0.17",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@types/yauzl-promise": "^4.0.1",
+    "@vitejs/plugin-react": "^6.0.1",
+    "concurrently": "^9.2.1",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "tailwindcss": "^4.2.2",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2",
+    "vite": "^8.0.3"
+  }
+}

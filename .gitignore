@@ -1,0 +1,21 @@
+node_modules/
+dist/
+.env
+*.log
+logs/
+
+# App data (contains secrets — config.json has encrypted credentials, .key is the encryption key)
+data/*
+!data/.gitkeep
+
+# Cloudflare tunnel — generated file contains tunnel ID and credential paths
+cloudflared.yml
+*.json.bak
+cert.pem
+
+# AI / Copilot / Claude
+.claude/
+.copilot/
+.github/copilot-instructions.md
+.instructions.md
+.prompt.md
