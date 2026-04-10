@@ -24,6 +24,11 @@ It's perfect for couch sessions where you don't want to alt-tab out of Clone Her
 
 > Basically, my wife wanted to play Clone Hero from the couch and not get up to download songs. She wanted to be able to add them from her phone while we were playing. So I built Clone Sidekick to solve that problem. Now she can even add songs when she hears them out of the house (e.g. on the radio) and have them ready to play when she gets home.
 
+### 🎸 Preview
+<div align="center">
+<img src="https://i.imgur.com/GNYFqZV.png" alt="Clone Sidekick Screenshot" width="900" />
+</div>
+
 ### 🔑 Key Highlights
 
 |    | Feature                     | Description                                              |
