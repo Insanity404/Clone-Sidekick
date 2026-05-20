@@ -14,6 +14,7 @@ import { apiRouter } from './routes.js';
 import { setupRouter } from './setupRoutes.js';
 import { initQueue } from './downloadManager.js';
 import { startTunnel, stopTunnel } from './tunnel.js';
+import { initPartyStore, validateSession } from './partyStore.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -55,6 +56,25 @@ app.use(passport.session());
 // Register Google strategy if configured
 setupAuth();
 
+// ── Guest join (must be before setup gate and SPA fallback) ──────
+app.get('/guest/join/:token', (req, res) => {
+  const token = req.params['token'] as string;
+  if (!config.party.enabled) {
+    res.status(403).send('<html><body style="font-family:sans-serif;padding:2rem"><h2>Party mode is not enabled.</h2></body></html>');
+    return;
+  }
+  const guestSession = validateSession(token);
+  if (!guestSession) {
+    res.status(400).send('<html><body style="font-family:sans-serif;padding:2rem"><h2>This guest link has expired or is invalid.</h2><p>Ask the host for a new link.</p></body></html>');
+    return;
+  }
+  (req.session as any).guestToken = token;
+  // Non-httpOnly hint so the client can detect an expired guest session
+  const maxMs = Math.max(1, Math.min(24, config.party.sessionDurationHours)) * 3_600_000;
+  res.cookie('guestHint', '1', { maxAge: maxMs, httpOnly: false, sameSite: 'lax' });
+  req.session.save(() => res.redirect('/'));
+});
+
 // ── Auth routes (only active when Google auth is configured) ─────
 app.get('/auth/google', (req, res, next) => {
   if (config.auth.mode !== 'google') { res.status(404).end(); return; }
@@ -81,7 +101,7 @@ app.use((req, res, next) => {
   ) {
     return next();
   }
-  if (req.path === '/setup' || req.path === '/') return next();
+  if (req.path === '/setup' || req.path === '/' || req.path.startsWith('/guest/join/')) return next();
   res.redirect('/setup');
 });
 
@@ -98,6 +118,7 @@ app.get('/{*path}', (_req, res) => {
 });
 
 // ── Start ───────────────────────────────────────────────────────
+await initPartyStore();
 await initQueue();
 app.listen(config.port, '0.0.0.0', () => {
   const setupNeeded = !isConfigComplete(config);

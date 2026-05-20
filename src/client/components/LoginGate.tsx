@@ -1,4 +1,19 @@
-export function LoginGate() {
+export function LoginGate({ guestExpired = false }: { guestExpired?: boolean }) {
+  if (guestExpired) {
+    return (
+      <div className="flex items-center justify-center min-h-dvh px-4">
+        <div className="bg-gray-900 rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl border border-gray-800">
+          <img src="/guitar_cape_icon_128x128.png" alt="Clone Sidekick" className="w-24 h-24 mx-auto mb-4 opacity-50" />
+          <h1 className="text-xl font-bold mb-2">Guest Link Expired</h1>
+          <p className="text-gray-400 text-sm">
+            Your temporary guest access has expired or been revoked.
+            Ask the host for a new QR code or guest link.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex items-center justify-center min-h-dvh px-4">
       <div className="bg-gray-900 rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl border border-gray-800">

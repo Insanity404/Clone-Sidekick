@@ -1,11 +1,13 @@
 /* ────────────────────────────────────────────────────────────────
- *  Google OAuth 2.0 with Passport.js
+ *  Google OAuth 2.0 with Passport.js + guest session helpers
  * ──────────────────────────────────────────────────────────────── */
 
 import passport from 'passport';
 import { Strategy as GoogleStrategy, Profile } from 'passport-google-oauth20';
+import { Request, Response, NextFunction } from 'express';
 import { config } from './configStore.js';
-import type { UserInfo } from '../shared/types.js';
+import { validateSession } from './partyStore.js';
+import type { UserInfo, GuestSession } from '../shared/types.js';
 
 export function setupAuth() {
   if (config.auth.mode !== 'google') return;
@@ -17,8 +19,6 @@ export function setupAuth() {
     return;
   }
 
-  // Unregister any existing strategy so setupAuth() is safe to call again
-  // after the wizard updates credentials mid-run.
   try { passport.unuse('google'); } catch { /* not registered yet */ }
 
   passport.use(
@@ -50,10 +50,31 @@ export function setupAuth() {
   );
 }
 
-/** Express middleware - rejects unauthenticated requests with 401. */
-export function requireAuth(req: any, res: any, next: () => void) {
-  if (config.auth.mode === 'none') return next();
-  if (config.auth.mode === 'google' && !config.auth.google.clientId) return next();
-  if (req.isAuthenticated?.()) return next();
+// ── Admin / guest identity helpers ───────────────────────────────
+
+export function isAdmin(req: Request): boolean {
+  if (config.auth.mode === 'none') return true;
+  if (config.auth.mode === 'google' && !config.auth.google.clientId) return true;
+  return req.isAuthenticated?.() ?? false;
+}
+
+export function getGuestSession(req: Request): GuestSession | null {
+  const token = (req.session as any)?.guestToken as string | undefined;
+  if (!token) return null;
+  return validateSession(token);
+}
+
+// ── Middleware ───────────────────────────────────────────────────
+
+/** Allows authenticated admins OR guests with a valid session token. */
+export function requireAuth(req: Request, res: Response, next: NextFunction) {
+  if (isAdmin(req)) return next();
+  if (getGuestSession(req)) return next();
   res.status(401).json({ error: 'Not authenticated' });
+}
+
+/** Allows admins only — guests are rejected with 403. */
+export function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  if (isAdmin(req)) return next();
+  res.status(403).json({ error: 'Admin access required' });
 }

@@ -10,7 +10,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { randomUUID, randomBytes, createCipheriv, createDecipheriv } from 'crypto';
 import dotenv from 'dotenv';
-import type { AppConfig } from '../shared/types.js';
+import type { AppConfig, GuestDeleteMode } from '../shared/types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR    = path.resolve(__dirname, '../../data');
@@ -206,6 +206,16 @@ export function generateDefaultConfig(): AppConfig {
     tunnel: {
       enabled: false,
       hostname: '',
+    },
+    party: {
+      enabled: false,
+      sessionDurationHours: 4,
+      defaultPermissions: {
+        canBrowseSources: true,
+        canBrowseLibrary: true,
+        canDownload: false,
+        deleteMode: 'none' as GuestDeleteMode,
+      },
     },
   };
 }

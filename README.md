@@ -39,6 +39,7 @@ It's perfect for couch sessions where you don't want to alt-tab out of Clone Her
 | 📱 | **Use Any Device**          | Responsive UI works on phones, tablets, and desktops     |
 | 🌐 | **Optional Remote Access**  | Cloudflare Tunnel support for secure access from anywhere|
 | 🔐 | **Google OAuth**            | Lock it down to specific Google accounts for WAN use     |
+| 🎉 | **Party Mode**              | Share a QR guest link so friends can browse and download without an account |
 | 🧹 | **Auto Metadata Cleanup**   | Strips charter tags and rich-text markup from song metadata|
 | 📡 | **Real-Time Progress**      | Live download status via Server-Sent Events              |
 
@@ -108,7 +109,37 @@ All settings can be changed after initial setup without restarting (except port)
 - **Authentication** - switch between no auth (LAN) and Google OAuth
 - **Google OAuth** - Client ID, Client Secret, Callback URL, allowed email list
 - **Cloudflare Tunnel** - enable/disable remote access with hostname configuration
+- **Party Mode** - enable guest access, set session duration, configure default permissions
 - **Server Port** - custom port (requires restart)
+
+### 🎉 Party Mode
+
+Party Mode lets you share temporary guest access with friends — no Google account, no passwords. Perfect for couch sessions where everyone wants to queue songs from their phone.
+
+**How to set it up:**
+1. Open **Settings → Party Mode** and flip the toggle on
+2. Set the **session duration** (1–24 hours) — links automatically expire after this time
+3. Configure the **default permissions** for all new guest links:
+
+   | Permission | What it allows |
+   |:-----------|:---------------|
+   | 🔍 Browse Sources | Search Enchor.us for charts |
+   | 📚 Browse Library | View the download history tab |
+   | ⬇️ Download | Queue chart downloads to your songs folder |
+   | 🗑️ Delete | None, their own downloads only, or any download |
+
+4. Click **New Guest Link** — a QR code and shareable URL are generated instantly
+5. Share the QR code or copy the link and send it to your friends
+6. Guests scan/tap the link and land directly in the app with their permitted access — no sign-in required
+7. Manage or revoke sessions anytime from the Party Mode panel
+
+**Key behaviours:**
+
+- **Time-limited** — sessions expire automatically after the configured duration; guests see a clear "link expired" screen rather than a generic login page
+- **Revocable** — revoke individual guest links at any time, or kill all active sessions at once from the panel
+- **Permission-gated** — guests only see the tabs and buttons allowed by their permissions; settings and admin controls are always hidden
+- **Secure tokens** — each guest link uses a 32-byte cryptographically random token; guessing a valid token is computationally infeasible
+- **No account needed** — guests join via their unique token only; Google OAuth is not triggered for guest sessions
 
 ### 🔐 Security
 
@@ -394,7 +425,8 @@ clone-sidekick/
 │   │   │   ├── ChartCard.tsx        # Chart result card with preview
 │   │   │   ├── DownloadQueue.tsx    # Download manager & history
 │   │   │   ├── SettingsPanel.tsx    # Settings page
-│   │   │   ├── LoginGate.tsx        # OAuth login screen
+│   │   │   ├── PartyPanel.tsx       # Party Mode guest management UI
+│   │   │   ├── LoginGate.tsx        # OAuth / expired-guest login screen
 │   │   │   └── Toast.tsx            # Shared toast notification system
 │   │   ├── setup/
 │   │   │   ├── SetupWizard.tsx      # First-run setup wizard
@@ -408,7 +440,8 @@ clone-sidekick/
 │   │   ├── enchor.ts                # Enchor.us API client
 │   │   ├── enrichment.ts            # Metadata enrichment for scanned songs
 │   │   ├── configStore.ts           # Encrypted config management
-│   │   ├── auth.ts                  # Google OAuth setup
+│   │   ├── auth.ts                  # Google OAuth + guest session auth helpers
+│   │   ├── partyStore.ts            # Guest session creation, validation & revocation
 │   │   ├── tunnel.ts                # Cloudflare Tunnel management
 │   │   ├── persistence.ts           # Download history & songs dir scanning
 │   │   └── songIniCleaner.ts        # Metadata tag cleanup
@@ -417,7 +450,8 @@ clone-sidekick/
 ├── data/                        # Runtime data (gitignored)
 │   ├── config.json                  # Encrypted server config
 │   ├── .key                         # Encryption key
-│   └── downloads.json               # Download history
+│   ├── downloads.json               # Download history
+│   └── party.json                   # Active guest sessions
 └── public/                      # Static assets
 ```
 

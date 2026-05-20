@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { getSetupStatus, getSetupDefaults, validateDir, saveSetupConfig } from '../setup/setupApi';
 import { getPrefs, savePrefs } from '../api';
 import { useToast } from './Toast';
+import { PartyPanel } from './PartyPanel';
 import type { SafeConfig } from '../setup/setupApi';
 import type { DownloadFormat } from '../../shared/types';
 
@@ -13,6 +14,7 @@ export function SettingsPanel() {
   const [dirChecking, setDirChecking] = useState(false);
   const [emailsRaw, setEmailsRaw] = useState('');
   const [showSecret, setShowSecret] = useState(false);
+  const [secretEdited, setSecretEdited] = useState(false);
   const [dlFormat, setDlFormat] = useState<DownloadFormat>('folder');
   const [dlVideoBackground, setDlVideoBackground] = useState(false);
   const [currentPrefs, setCurrentPrefs] = useState<any>(null);
@@ -223,14 +225,14 @@ export function SettingsPanel() {
                 className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500"
               />
             </Field>
-            <Field label="Client Secret">
+            <Field label="Client Secret" hint={secretEdited ? undefined : 'Showing masked value — type to replace'}>
               <div className="relative">
                 <input
                   type={showSecret ? 'text' : 'password'}
                   value={form.auth.google.clientSecret}
-                  onChange={e => patchGoogle({ clientSecret: e.target.value })}
+                  onChange={e => { setSecretEdited(true); patchGoogle({ clientSecret: e.target.value }); }}
                   onBlur={onBlurSave}
-                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 pr-14 text-sm text-white focus:outline-none focus:border-purple-500"
+                  className={`w-full bg-gray-900 border rounded-lg px-3 py-2 pr-14 text-sm text-white focus:outline-none focus:border-purple-500 ${secretEdited ? 'border-gray-700' : 'border-yellow-800/60'}`}
                 />
                 <button
                   type="button"
@@ -292,6 +294,11 @@ export function SettingsPanel() {
             </Field>
           </div>
         )}
+      </Section>
+
+      {/* ── Party Mode ─────────────────────────────────────────── */}
+      <Section title="Party Mode" desc="Let guests join with a temporary QR link and limited permissions.">
+        <PartyPanel />
       </Section>
 
       {/* ── Port ────────────────────────────────────────────────── */}

@@ -1,6 +1,6 @@
 {
   "name": "clone-sidekick",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A web-based Clone Hero chart browser and downloader — search and install songs from Enchor.us via any browser on your LAN or WAN.",
   "private": true,
   "license": "GPL-3.0-only",
@@ -26,6 +26,7 @@
     "parse-sng": "^4.0.3",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
+    "qrcode": "^1.5.4",
     "sanitize-filename": "^1.6.4",
     "yauzl-promise": "^4.0.0"
   },
@@ -36,6 +37,7 @@
     "@types/node": "^25.5.0",
     "@types/passport": "^1.0.17",
     "@types/passport-google-oauth20": "^2.0.17",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@types/yauzl-promise": "^4.0.1",

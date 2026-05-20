@@ -10,18 +10,23 @@ import type {
   DownloadProgress,
   UserInfo,
   UserPrefs,
+  PartyConfig,
+  GuestSession,
 } from '../shared/types';
 
 const BASE = '/api';
 
 // Set by App.tsx after /api/config loads so 401 handler knows where to redirect
 let authMode: 'none' | 'google' = 'none';
+let isGuestSession = false;
 export function setAuthMode(mode: 'none' | 'google') { authMode = mode; }
+export function setIsGuestSession(v: boolean) { isGuestSession = v; }
 
 async function json<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
   if (res.status === 401) {
-    if (authMode === 'google') window.location.href = '/auth/google';
+    // Never redirect guests to Google OAuth — they need a new guest link instead
+    if (authMode === 'google' && !isGuestSession) window.location.href = '/auth/google';
     throw new Error('Not authenticated');
   }
   if (!res.ok) {
@@ -94,8 +99,38 @@ export function getMe(): Promise<UserInfo> {
   return json(`${BASE}/me`);
 }
 
-export function getConfig(): Promise<{ songsDir: string | null; authMode: 'none' | 'google'; authEnabled: boolean }> {
+export function getConfig(): Promise<{ songsDir: string | null; authMode: 'none' | 'google'; authEnabled: boolean; partyEnabled: boolean }> {
   return json(`${BASE}/config`);
+}
+
+// ── Party Mode ───────────────────────────────────────────────────
+
+export function getParty(): Promise<{ config: PartyConfig; sessions: GuestSession[] }> {
+  return json(`${BASE}/party`);
+}
+
+export function updatePartyConfig(cfg: Partial<PartyConfig>): Promise<{ ok: boolean; config: PartyConfig }> {
+  return json(`${BASE}/party/config`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(cfg),
+  });
+}
+
+export function createGuestSession(): Promise<{ session: GuestSession; joinUrl: string }> {
+  return json(`${BASE}/party/sessions`, { method: 'POST' });
+}
+
+export function getSessionQR(token: string): Promise<{ dataUrl: string; joinUrl: string }> {
+  return json(`${BASE}/party/sessions/${encodeURIComponent(token)}/qr`);
+}
+
+export function revokeGuestSession(token: string): Promise<{ ok: boolean }> {
+  return json(`${BASE}/party/sessions/${encodeURIComponent(token)}`, { method: 'DELETE' });
+}
+
+export function revokeAllGuestSessions(): Promise<{ ok: boolean }> {
+  return json(`${BASE}/party/sessions`, { method: 'DELETE' });
 }
 
 // ── Preferences ─────────────────────────────────────────────────

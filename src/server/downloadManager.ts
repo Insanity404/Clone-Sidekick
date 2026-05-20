@@ -18,7 +18,7 @@ import { getChartDownloadStream } from './enchor.js';
 import { cleanAllSongInis } from './songIniCleaner.js';
 import { loadDownloads, scheduleSave, scanSongsDir } from './persistence.js';
 import { enrichSingle, needsEnrichment } from './enrichment.js';
-import type { DownloadProgress, DownloadStatus, ChartResult } from '../shared/types';
+import type { DownloadProgress, DownloadStatus, ChartResult, UserInfo } from '../shared/types';
 
 // ── In-memory state ─────────────────────────────────────────────
 
@@ -118,7 +118,11 @@ const DEFAULT_DL_OPTS: DownloadOptions = { format: 'folder', skipVideo: true };
 const pendingOpts: Map<string, DownloadOptions> = new Map();
 const pendingCharts: Map<string, ChartResult> = new Map();
 
-export function enqueueDownload(chart: ChartResult, opts: DownloadOptions = DEFAULT_DL_OPTS) {
+export function enqueueDownload(
+  chart: ChartResult,
+  opts: DownloadOptions = DEFAULT_DL_OPTS,
+  addedBy?: DownloadProgress['addedBy'],
+) {
   if (queue.has(chart.md5) && queue.get(chart.md5)!.status !== 'error') {
     return; // already queued or done
   }
@@ -132,6 +136,7 @@ export function enqueueDownload(chart: ChartResult, opts: DownloadOptions = DEFA
     percent: null,
     albumArtMd5: chart.albumArtMd5 ?? null,
     chart,
+    addedBy,
   };
 
   broadcast(dp);

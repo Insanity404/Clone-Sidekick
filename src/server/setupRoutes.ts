@@ -90,6 +90,9 @@ setupRouter.post('/save', async (req: Request, res: Response) => {
   const incoming = req.body as Partial<AppConfig>;
 
   // Build new config by merging over current
+  // The Settings UI displays a masked secret (••••xxxx). If the incoming value
+  // still looks masked, the user didn't change it — keep the real stored secret.
+  const isMasked = (s: string | undefined) => !s || s.startsWith('••••');
   const next: AppConfig = {
     ...config,
     cloneHeroSongsDir: incoming.cloneHeroSongsDir ?? config.cloneHeroSongsDir,
@@ -97,7 +100,9 @@ setupRouter.post('/save', async (req: Request, res: Response) => {
       mode: incoming.auth?.mode ?? config.auth.mode,
       google: {
         clientId:      incoming.auth?.google?.clientId      ?? config.auth.google.clientId,
-        clientSecret:  incoming.auth?.google?.clientSecret  ?? config.auth.google.clientSecret,
+        clientSecret:  isMasked(incoming.auth?.google?.clientSecret)
+          ? config.auth.google.clientSecret
+          : incoming.auth!.google!.clientSecret!,
         callbackUrl:   incoming.auth?.google?.callbackUrl   ?? config.auth.google.callbackUrl,
         allowedEmails: incoming.auth?.google?.allowedEmails ?? config.auth.google.allowedEmails,
       },

@@ -1,0 +1,6 @@
+allowBuilds:
+  esbuild: true
+  exifreader: true
+allowedDeprecatedVersions:
+  {}
+blockExoticSubdeps: false

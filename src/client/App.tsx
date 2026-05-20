@@ -3,38 +3,45 @@ import { SearchPanel } from './components/SearchPanel';
 import { DownloadQueue } from './components/DownloadQueue';
 import { SettingsPanel } from './components/SettingsPanel';
 import { LoginGate } from './components/LoginGate';
-import { getMe, getConfig, subscribeDownloads, setAuthMode } from './api';
-import type { UserInfo, DownloadProgress } from '../shared/types';
+import { getMe, getConfig, subscribeDownloads, setAuthMode, setIsGuestSession } from './api';
+import type { UserInfo, DownloadProgress, GuestPermissions } from '../shared/types';
+
+type Tab = 'search' | 'downloads' | 'settings';
 
 export function App() {
-  const [user, setUser] = useState<UserInfo | null>(null);
+  const [user, setUser]               = useState<UserInfo | null>(null);
   const [authEnabled, setAuthEnabled] = useState(true);
-  const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<'search' | 'downloads' | 'settings'>('search');
-  const [downloads, setDownloads] = useState<Map<string, DownloadProgress>>(new Map());
-  const [scrolled, setScrolled] = useState(false);
+  const [guestExpired, setGuestExpired] = useState(false);
+  const [loading, setLoading]         = useState(true);
+  const [tab, setTab]                 = useState<Tab>('search');
+  const [downloads, setDownloads]     = useState<Map<string, DownloadProgress>>(new Map());
+  const [scrolled, setScrolled]       = useState(false);
 
   useEffect(() => {
     Promise.all([getMe(), getConfig()])
       .then(([u, c]) => {
         setAuthMode(c.authMode);
+        setIsGuestSession(u.isGuest === true);
+        // Clear the hint cookie when an admin logs in successfully
+        if (!u.isGuest) document.cookie = 'guestHint=; Max-Age=0; path=/';
         setUser(u);
         setAuthEnabled(c.authEnabled);
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch(() => {
+        // If a non-httpOnly guestHint cookie exists, this was an expired guest session
+        const wasGuest = document.cookie.split(';').some(c => c.trim().startsWith('guestHint='));
+        setGuestExpired(wasGuest);
+        setLoading(false);
+      });
   }, []);
 
-  // Single SSE subscription owned at app level so both tabs share state
   useEffect(() => {
     const unsub = subscribeDownloads(dp => {
       setDownloads(prev => {
         const next = new Map(prev);
         const existing = prev.get(dp.md5);
-        // Merge: preserve chart data from prior events when not present on progress updates
-        if (existing?.chart && !dp.chart) {
-          dp.chart = existing.chart;
-        }
+        if (existing?.chart && !dp.chart) dp.chart = existing.chart;
         next.set(dp.md5, dp);
         return next;
       });
@@ -42,7 +49,6 @@ export function App() {
     return unsub;
   }, []);
 
-  // Track scroll position for collapsible header
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 10);
     window.addEventListener('scroll', onScroll, { passive: true });
@@ -63,8 +69,24 @@ export function App() {
   }
 
   if (authEnabled && !user) {
-    return <LoginGate />;
+    return <LoginGate guestExpired={guestExpired} />;
   }
+
+  const isGuest = user?.isGuest === true;
+  const guestPerms: GuestPermissions | undefined = isGuest ? user?.permissions : undefined;
+
+  // Tabs available to this session
+  const showSearch    = !isGuest || (guestPerms?.canBrowseSources ?? false);
+  const showDownloads = !isGuest || (guestPerms?.canBrowseLibrary ?? false) || (guestPerms?.canDownload ?? false);
+  const showSettings  = !isGuest;
+
+  // If the current tab became hidden, move to the first visible one
+  const effectiveTab: Tab =
+    (tab === 'search' && !showSearch) ||
+    (tab === 'downloads' && !showDownloads) ||
+    (tab === 'settings' && !showSettings)
+      ? showSearch ? 'search' : showDownloads ? 'downloads' : 'settings'
+      : tab;
 
   const downloadedMd5s = new Set(
     [...downloads.values()].filter(d => d.status === 'done').map(d => d.md5),
@@ -87,19 +109,31 @@ export function App() {
 
           {/* Center: tab bar */}
           <nav className="flex gap-1 bg-gray-800 rounded-lg p-0.5">
-            <TabButton active={tab === 'search'} onClick={() => setTab('search')}>
-              Search
-            </TabButton>
-            <TabButton active={tab === 'downloads'} onClick={() => setTab('downloads')}>
-              Downloads
-            </TabButton>
-            <TabButton active={tab === 'settings'} onClick={() => setTab('settings')}>
-              Settings
-            </TabButton>
+            {showSearch && (
+              <TabButton active={effectiveTab === 'search'} onClick={() => setTab('search')}>
+                Search
+              </TabButton>
+            )}
+            {showDownloads && (
+              <TabButton active={effectiveTab === 'downloads'} onClick={() => setTab('downloads')}>
+                Downloads
+              </TabButton>
+            )}
+            {showSettings && (
+              <TabButton active={effectiveTab === 'settings'} onClick={() => setTab('settings')}>
+                Settings
+              </TabButton>
+            )}
           </nav>
 
-          {/* Right: user avatar / logout */}
-          {user && user.email !== 'local' ? (
+          {/* Right: user avatar / guest badge / logout */}
+          {isGuest ? (
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 rounded-full bg-purple-900/50 text-purple-300 text-xs font-medium border border-purple-800">
+                Guest
+              </span>
+            </div>
+          ) : user && user.email !== 'local' ? (
             <a
               href="/auth/logout"
               title={`Logged in as ${user.displayName}`}
@@ -116,9 +150,15 @@ export function App() {
 
       {/* ── Main content ───────────────────────────────────── */}
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-4">
-        {tab === 'search' && <SearchPanel downloadedMd5s={downloadedMd5s} />}
-        {tab === 'downloads' && <DownloadQueue downloads={downloads} onRemove={handleRemove} />}
-        {tab === 'settings' && <SettingsPanel />}
+        {effectiveTab === 'search' && showSearch && (
+          <SearchPanel downloadedMd5s={downloadedMd5s} />
+        )}
+        {effectiveTab === 'downloads' && showDownloads && (
+          <DownloadQueue downloads={downloads} onRemove={handleRemove} />
+        )}
+        {effectiveTab === 'settings' && showSettings && (
+          <SettingsPanel />
+        )}
       </main>
     </div>
   );

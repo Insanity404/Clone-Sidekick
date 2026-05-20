@@ -173,6 +173,8 @@ export interface DownloadProgress {
   downloadedAt?: string;
   /** Full chart data from Enchor.us — stored on enqueue so the UI can show features / note counts. */
   chart?: ChartResult;
+  /** Who triggered this download. */
+  addedBy?: { type: 'admin' | 'guest'; guestToken?: string };
 }
 
 // ── Auth ────────────────────────────────────────────────────────
@@ -181,6 +183,33 @@ export interface UserInfo {
   email: string;
   displayName: string;
   photo?: string;
+  isGuest?: boolean;
+  permissions?: GuestPermissions;
+}
+
+// ── Party Mode ───────────────────────────────────────────────────
+
+export type GuestDeleteMode = 'none' | 'own' | 'any';
+
+export interface GuestPermissions {
+  canBrowseSources: boolean;
+  canBrowseLibrary: boolean;
+  canDownload: boolean;
+  deleteMode: GuestDeleteMode;
+}
+
+export interface GuestSession {
+  token: string;
+  createdAt: string;
+  expiresAt: string;
+  permissions: GuestPermissions;
+  revokedAt?: string;
+}
+
+export interface PartyConfig {
+  enabled: boolean;
+  sessionDurationHours: number;
+  defaultPermissions: GuestPermissions;
 }
 
 // ── User preferences ─────────────────────────────────────────────
@@ -220,4 +249,5 @@ export interface AppConfig {
   cloneHeroSongsDir: string;
   auth: AppConfigAuth;
   tunnel: AppConfigTunnel;
+  party: PartyConfig;
 }
