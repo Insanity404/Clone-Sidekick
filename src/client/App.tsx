@@ -2,13 +2,15 @@ import { useState, useEffect } from 'react';
 import { SearchPanel } from './components/SearchPanel';
 import { DownloadQueue } from './components/DownloadQueue';
 import { SettingsPanel } from './components/SettingsPanel';
+import { LibraryPanel } from './components/LibraryPanel';
 import { LoginGate } from './components/LoginGate';
 import { getMe, getConfig, subscribeDownloads, setAuthMode, setIsGuestSession } from './api';
-import type { UserInfo, DownloadProgress, GuestPermissions } from '../shared/types';
+import type { UserInfo, DownloadProgress, GuestPermissions, ChartResult } from '../shared/types';
 
-type Tab = 'search' | 'downloads' | 'settings';
+type Tab = 'search' | 'downloads' | 'library' | 'settings';
 
 export function App() {
+  // ── State (ALL hooks must be here, before any early return) ──────
   const [user, setUser]               = useState<UserInfo | null>(null);
   const [authEnabled, setAuthEnabled] = useState(true);
   const [guestExpired, setGuestExpired] = useState(false);
@@ -16,20 +18,36 @@ export function App() {
   const [tab, setTab]                 = useState<Tab>('search');
   const [downloads, setDownloads]     = useState<Map<string, DownloadProgress>>(new Map());
   const [scrolled, setScrolled]       = useState(false);
+  const [mountedTabs, setMountedTabs] = useState<Set<Tab>>(new Set<Tab>());
 
+  // ── Derive tab visibility now so effectiveTab is available for the effect below ──
+  const isGuest = user?.isGuest === true;
+  const guestPerms: GuestPermissions | undefined = isGuest ? user?.permissions : undefined;
+  const showSearch    = !isGuest || (guestPerms?.canBrowseSources ?? false);
+  const showDownloads = !isGuest || (guestPerms?.canViewDownloads ?? false) || (guestPerms?.canDownload ?? false);
+  const showLibrary   = !isGuest || (guestPerms?.canBrowseLibrary ?? false);
+  const showSettings  = !isGuest;
+
+  const effectiveTab: Tab = (() => {
+    if (tab === 'search'    && !showSearch)    return showDownloads ? 'downloads' : showLibrary ? 'library' : 'settings';
+    if (tab === 'downloads' && !showDownloads) return showSearch ? 'search' : showLibrary ? 'library' : 'settings';
+    if (tab === 'library'   && !showLibrary)   return showSearch ? 'search' : showDownloads ? 'downloads' : 'settings';
+    if (tab === 'settings'  && !showSettings)  return showSearch ? 'search' : showDownloads ? 'downloads' : 'library';
+    return tab;
+  })();
+
+  // ── Effects ──────────────────────────────────────────────────────
   useEffect(() => {
     Promise.all([getMe(), getConfig()])
       .then(([u, c]) => {
         setAuthMode(c.authMode);
         setIsGuestSession(u.isGuest === true);
-        // Clear the hint cookie when an admin logs in successfully
         if (!u.isGuest) document.cookie = 'guestHint=; Max-Age=0; path=/';
         setUser(u);
         setAuthEnabled(c.authEnabled);
         setLoading(false);
       })
       .catch(() => {
-        // If a non-httpOnly guestHint cookie exists, this was an expired guest session
         const wasGuest = document.cookie.split(';').some(c => c.trim().startsWith('guestHint='));
         setGuestExpired(wasGuest);
         setLoading(false);
@@ -50,16 +68,57 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 10);
+    // Hysteresis prevents rapid toggling near the boundary when the header
+    // height change slightly shifts the scroll position.
+    const onScroll = () => {
+      const y = window.scrollY;
+      setScrolled(prev => y > 20 ? true : y < 5 ? false : prev);
+    };
     window.addEventListener('scroll', onScroll, { passive: true });
     onScroll();
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
+  // Lazy-mount: once a tab is visited, keep it in the DOM (hidden with display:none) rather
+  // than unmounting - preserves search results and scroll position when switching tabs.
+  useEffect(() => {
+    setMountedTabs(prev => prev.has(effectiveTab) ? prev : new Set([...prev, effectiveTab]));
+  }, [effectiveTab]);
+
+  // ── Handlers ─────────────────────────────────────────────────────
   const handleRemove = (md5: string) => {
     setDownloads(prev => { const next = new Map(prev); next.delete(md5); return next; });
   };
 
+  const handleRescan = (updated: DownloadProgress[]) => {
+    // Replace the entire map with the server's authoritative snapshot so
+    // deleted songs disappear and duplicates are cleaned up.
+    setDownloads(new Map(updated.map(dp => [dp.md5, dp])));
+  };
+
+  // Optimistic update: add queued item immediately when POST returns so the
+  // Downloads tab shows it without waiting for the SSE event to flush.
+  const handleDownloadQueued = (chart: ChartResult) => {
+    setDownloads(prev => {
+      const existing = prev.get(chart.md5);
+      if (existing && existing.status !== 'error') return prev;
+      const dp: DownloadProgress = {
+        md5: chart.md5,
+        name: chart.name ?? 'Unknown',
+        artist: chart.artist ?? 'Unknown',
+        charter: chart.charter ?? 'Unknown',
+        status: 'queued',
+        percent: null,
+        albumArtMd5: chart.albumArtMd5 ?? null,
+        chart,
+      };
+      const next = new Map(prev);
+      next.set(dp.md5, dp);
+      return next;
+    });
+  };
+
+  // ── Early returns (after ALL hooks) ──────────────────────────────
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-dvh">
@@ -72,33 +131,16 @@ export function App() {
     return <LoginGate guestExpired={guestExpired} />;
   }
 
-  const isGuest = user?.isGuest === true;
-  const guestPerms: GuestPermissions | undefined = isGuest ? user?.permissions : undefined;
-
-  // Tabs available to this session
-  const showSearch    = !isGuest || (guestPerms?.canBrowseSources ?? false);
-  const showDownloads = !isGuest || (guestPerms?.canBrowseLibrary ?? false) || (guestPerms?.canDownload ?? false);
-  const showSettings  = !isGuest;
-
-  // If the current tab became hidden, move to the first visible one
-  const effectiveTab: Tab =
-    (tab === 'search' && !showSearch) ||
-    (tab === 'downloads' && !showDownloads) ||
-    (tab === 'settings' && !showSettings)
-      ? showSearch ? 'search' : showDownloads ? 'downloads' : 'settings'
-      : tab;
-
-  const downloadedMd5s = new Set(
-    [...downloads.values()].filter(d => d.status === 'done').map(d => d.md5),
-  );
+  // A tab renders if it's the active tab OR has been visited before
+  const shouldRender = (t: Tab) => t === effectiveTab || mountedTabs.has(t);
 
   return (
     <div className="flex flex-col min-h-dvh">
       {/* ── Header ─────────────────────────────────────────── */}
       <header className="sticky top-0 z-50 bg-gray-900/80 backdrop-blur border-b border-gray-800">
-        <div className="max-w-5xl mx-auto px-4 flex items-center justify-between py-2">
-          {/* Left: icon + title */}
-          <div className="flex items-center gap-2">
+        <div className="max-w-6xl mx-auto px-4 flex items-center justify-between py-2">
+          {/* Left: icon + title - hidden on mobile to prevent side-scroll */}
+          <div className="hidden sm:flex items-center gap-2">
             <img
               src="/guitar_cape_icon_128x128.png"
               alt=""
@@ -117,6 +159,11 @@ export function App() {
             {showDownloads && (
               <TabButton active={effectiveTab === 'downloads'} onClick={() => setTab('downloads')}>
                 Downloads
+              </TabButton>
+            )}
+            {showLibrary && (
+              <TabButton active={effectiveTab === 'library'} onClick={() => setTab('library')}>
+                Library
               </TabButton>
             )}
             {showSettings && (
@@ -149,15 +196,26 @@ export function App() {
       </header>
 
       {/* ── Main content ───────────────────────────────────── */}
-      <main className="flex-1 max-w-5xl w-full mx-auto px-4 py-4">
-        {effectiveTab === 'search' && showSearch && (
-          <SearchPanel downloadedMd5s={downloadedMd5s} />
+      <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-4">
+        {showSearch && shouldRender('search') && (
+          <div style={{ display: effectiveTab === 'search' ? undefined : 'none' }}>
+            <SearchPanel downloads={downloads} onDownloadQueued={handleDownloadQueued} />
+          </div>
         )}
-        {effectiveTab === 'downloads' && showDownloads && (
-          <DownloadQueue downloads={downloads} onRemove={handleRemove} />
+        {showDownloads && shouldRender('downloads') && (
+          <div style={{ display: effectiveTab === 'downloads' ? undefined : 'none' }}>
+            <DownloadQueue downloads={downloads} onRemove={handleRemove} />
+          </div>
         )}
-        {effectiveTab === 'settings' && showSettings && (
-          <SettingsPanel />
+        {showLibrary && shouldRender('library') && (
+          <div style={{ display: effectiveTab === 'library' ? undefined : 'none' }}>
+            <LibraryPanel downloads={downloads} onRescan={handleRescan} onRemove={handleRemove} isAdmin={!isGuest} />
+          </div>
+        )}
+        {showSettings && shouldRender('settings') && (
+          <div style={{ display: effectiveTab === 'settings' ? undefined : 'none' }}>
+            <SettingsPanel />
+          </div>
         )}
       </main>
     </div>

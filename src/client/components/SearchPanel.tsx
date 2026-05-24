@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { search as apiSearch, advancedSearch as apiAdvancedSearch, startDownload, getPrefs, savePrefs } from '../api';
 import { ChartCard } from './ChartCard';
 import { useToast } from './Toast';
@@ -11,6 +11,7 @@ import type {
   AdvancedSearchRequest,
   TextFilter,
   DownloadFormat,
+  DownloadProgress,
 } from '../../shared/types';
 import { INSTRUMENTS, DIFFICULTIES } from '../../shared/types';
 
@@ -18,7 +19,41 @@ const PER_PAGE = 25;
 
 const emptyText = (): TextFilter => ({ value: '', exact: false, exclude: false });
 
-export function SearchPanel({ downloadedMd5s }: { downloadedMd5s: Set<string> }) {
+function normTitle(s: string | null | undefined): string {
+  return (s ?? '').toLowerCase().replace(/\s*\([^)]*\)/g, '').trim();
+}
+
+export function SearchPanel({
+  downloads,
+  onDownloadQueued,
+}: {
+  downloads: Map<string, DownloadProgress>;
+  onDownloadQueued?: (chart: ChartResult) => void;
+}) {
+  const downloadedMd5s = useMemo(
+    () => new Set([...downloads.values()].filter(d => d.status === 'done').map(d => d.md5)),
+    [downloads],
+  );
+
+  // md5s for items currently in-flight (queued/downloading/extracting) — used to block duplicate downloads
+  const inProgressMd5s = useMemo(
+    () => new Set(
+      [...downloads.values()]
+        .filter(d => d.status === 'queued' || d.status === 'downloading' || d.status === 'extracting')
+        .map(d => d.md5),
+    ),
+    [downloads],
+  );
+
+  // Key: "name||artist" for every non-error download — used for fuzzy duplicate detection
+  const downloadedNameKeys = useMemo(
+    () => new Set(
+      [...downloads.values()]
+        .filter(d => d.status !== 'error' && d.name)
+        .map(d => `${normTitle(d.name)}||${normTitle(d.artist)}`),
+    ),
+    [downloads],
+  );
   const [query, setQuery] = useState('');
   const [instrument, setInstrument] = useState<Instrument | null>(null);
   const [difficulty, setDifficulty] = useState<Difficulty | null>(null);
@@ -204,9 +239,11 @@ export function SearchPanel({ downloadedMd5s }: { downloadedMd5s: Set<string> })
     setDownloading(prev => new Set(prev).add(chart.md5));
     try {
       await startDownload(chart);
+      onDownloadQueued?.(chart);
       toast(`⬇️ Queued "${chart.name}"`, 'success');
     } catch {
       toast(`Failed to queue "${chart.name}"`, 'error');
+      setDownloading(prev => { const next = new Set(prev); next.delete(chart.md5); return next; });
     }
   };
 
@@ -420,15 +457,22 @@ export function SearchPanel({ downloadedMd5s }: { downloadedMd5s: Set<string> })
 
       {/* ── Results ─────────────────────────────────────── */}
       <div className="space-y-2">
-        {results.map(chart => (
-          <ChartCard
-            key={chart.chartId}
-            chart={chart}
-            onDownload={() => handleDownload(chart)}
-            isDownloading={downloading.has(chart.md5)}
-            isDownloaded={downloadedMd5s.has(chart.md5)}
-          />
-        ))}
+        {results.map(chart => {
+          const isDownloaded = downloadedMd5s.has(chart.md5);
+          const isDownloading = downloading.has(chart.md5) || inProgressMd5s.has(chart.md5);
+          const hasSimilarVersion = !isDownloaded && !isDownloading &&
+            downloadedNameKeys.has(`${normTitle(chart.name)}||${normTitle(chart.artist)}`);
+          return (
+            <ChartCard
+              key={chart.chartId}
+              chart={chart}
+              onDownload={() => handleDownload(chart)}
+              isDownloading={isDownloading}
+              isDownloaded={isDownloaded}
+              hasSimilarVersion={hasSimilarVersion}
+            />
+          );
+        })}
       </div>
 
       {/* ── Infinite scroll sentinel ───────────────────── */}

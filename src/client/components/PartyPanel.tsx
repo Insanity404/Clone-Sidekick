@@ -146,17 +146,22 @@ export function PartyPanel() {
             </p>
             <div className="bg-gray-800 rounded-xl p-3 space-y-2.5">
               <PermToggle
-                label="Browse sources (search)"
+                label="Browse Search)"
                 checked={perms.canBrowseSources}
                 onChange={v => patchPermissions({ canBrowseSources: v })}
               />
               <PermToggle
-                label="Browse library (downloads tab)"
+                label="Browse Library)"
                 checked={perms.canBrowseLibrary}
                 onChange={v => patchPermissions({ canBrowseLibrary: v })}
               />
               <PermToggle
-                label="Download songs"
+                label="Browse Downloads"
+                checked={perms.canViewDownloads}
+                onChange={v => patchPermissions({ canViewDownloads: v })}
+              />
+              <PermToggle
+                label="Download Songs"
                 checked={perms.canDownload}
                 onChange={v => patchPermissions({ canDownload: v })}
               />

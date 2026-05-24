@@ -1,36 +1,33 @@
 /* ────────────────────────────────────────────────────────────────
- *  Cloudflare Tunnel — managed child process
+ *  Cloudflare Tunnel — managed child process (token mode only)
  * ──────────────────────────────────────────────────────────────── */
 
 import { spawn, type ChildProcess } from 'child_process';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { config } from './configStore.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 let tunnelProcess: ChildProcess | null = null;
 
 /** Only log lines that indicate meaningful state changes, not routine chatter. */
 function isImportantLine(line: string): boolean {
   const lower = line.toLowerCase();
-  // Connection registered / disconnected / errors
   if (lower.includes('registered') || lower.includes('unregistered')) return true;
   if (lower.includes('connection') && (lower.includes('error') || lower.includes('disconnect'))) return true;
   if (lower.includes('err') || lower.includes('failed') || lower.includes('unable')) return true;
-  // Tunnel ready / serving
   if (lower.includes('serving') || lower.includes('ready') || lower.includes('initial')) return true;
   return false;
 }
 
 export function startTunnel() {
-  if (tunnelProcess) return; // already running
+  if (tunnelProcess) return;
 
-  const cfgPath = path.resolve(__dirname, '../../cloudflared.yml');
+  if (!config.tunnel.token) {
+    console.warn('  ⚠  Tunnel enabled but no token configured. Open Settings and paste your Cloudflare Tunnel token.');
+    return;
+  }
 
   console.log(`  🌐 Starting Cloudflare Tunnel → https://${config.tunnel.hostname}`);
 
-  tunnelProcess = spawn('cloudflared', ['tunnel', '--config', cfgPath, 'run'], {
+  tunnelProcess = spawn('cloudflared', ['tunnel', 'run', '--token', config.tunnel.token], {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
@@ -47,7 +44,8 @@ export function startTunnel() {
   tunnelProcess.on('exit', (code, signal) => {
     tunnelProcess = null;
     if (signal !== 'SIGTERM' && signal !== 'SIGKILL') {
-      console.warn(`  ⚠  cloudflared exited (code ${code}). Is cloudflared installed?`);
+      console.warn(`  ⚠  cloudflared exited unexpectedly (code ${code}).`);
+      console.warn(`     Check that cloudflared is installed and your tunnel token is valid.`);
       console.warn(`     Install: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/`);
     }
   });
@@ -55,8 +53,7 @@ export function startTunnel() {
   tunnelProcess.on('error', (err: NodeJS.ErrnoException) => {
     tunnelProcess = null;
     if (err.code === 'ENOENT') {
-      console.warn(`  ⚠  cloudflared not found. Install it and re-run, or run manually: npm run tunnel`);
-      console.warn(`     Install: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/`);
+      console.warn(`  ⚠  cloudflared not found. Install it: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/`);
     } else {
       console.warn(`  ⚠  cloudflared error: ${err.message}`);
     }

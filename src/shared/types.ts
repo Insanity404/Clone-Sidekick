@@ -194,6 +194,7 @@ export type GuestDeleteMode = 'none' | 'own' | 'any';
 export interface GuestPermissions {
   canBrowseSources: boolean;
   canBrowseLibrary: boolean;
+  canViewDownloads: boolean;
   canDownload: boolean;
   deleteMode: GuestDeleteMode;
 }
@@ -241,12 +242,15 @@ export interface AppConfigAuth {
 export interface AppConfigTunnel {
   enabled: boolean;
   hostname: string;
+  token: string;
 }
 
 export interface AppConfig {
   port: number;
   sessionSecret: string;
   cloneHeroSongsDir: string;
+  cloneHeroInstallDir: string;
+  yargSongsDir: string;
   auth: AppConfigAuth;
   tunnel: AppConfigTunnel;
   party: PartyConfig;

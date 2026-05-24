@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect, Component, type ReactNode } from 'react';
-import { cancelDownload, deleteDownload, enrichDownload, getSongCount, localArtUrl, albumArtUrl } from '../api';
-import type { DownloadProgress, ChartResult, NoteCount } from '../../shared/types';
+import { cancelDownload, deleteDownload, enrichDownload, getSongCount, localArtUrl, albumArtUrl, downloadFromUrl } from '../api';
+import type { DownloadProgress } from '../../shared/types';
 import type { ChartPreviewPlayer } from 'chart-preview';
 import 'chart-preview';
+import { InstrumentBadgeRow, INST_DEFS } from './InstrumentBadges';
 
 // ── Error Boundary (prevents full-page crash from web component) ─
 
@@ -76,10 +77,14 @@ export function DownloadQueue({
 }) {
   const [sortKey, setSortKey] = useState<SortKey>('newest');
   const [songCount, setSongCount] = useState<number | null>(null);
+  const [urlInput, setUrlInput] = useState('');
+  const [urlOpen, setUrlOpen] = useState(false);
+  const [urlBusy, setUrlBusy] = useState(false);
+  const [urlError, setUrlError] = useState('');
 
   useEffect(() => {
     getSongCount().then(r => setSongCount(r.count)).catch(() => {});
-  }, [downloads.size]); // refresh count when list changes
+  }, [downloads.size]);
 
   const handleCancel = async (md5: string) => {
     try { await cancelDownload(md5); onRemove(md5); } catch { /* ignore */ }
@@ -89,18 +94,25 @@ export function DownloadQueue({
     try { await deleteDownload(md5); onRemove(md5); } catch { /* ignore */ }
   };
 
-  const allItems = [...downloads.values()]; // insertion order = chronological
-  const sorted = sortDownloads(allItems, sortKey);
+  const handleUrlDownload = async () => {
+    const url = urlInput.trim();
+    if (!url) return;
+    setUrlBusy(true);
+    setUrlError('');
+    try {
+      await downloadFromUrl(url);
+      setUrlInput('');
+      setUrlOpen(false);
+    } catch (e: unknown) {
+      setUrlError(e instanceof Error ? e.message : 'Failed to start download');
+    }
+    setUrlBusy(false);
+  };
 
-  if (sorted.length === 0) {
-    return (
-      <div className="text-center py-16 text-gray-500">
-        <div className="text-4xl mb-3">📦</div>
-        <p className="text-sm">No downloads yet.</p>
-        <p className="text-xs mt-1">Search for a song and hit the download button!</p>
-      </div>
-    );
-  }
+  const allItems = [...downloads.values()];
+  const sorted = sortDownloads(allItems, sortKey);
+  const activeItems = sorted.filter(dp => dp.status !== 'done');
+  const doneItems   = sorted.filter(dp => dp.status === 'done');
 
   return (
     <div className="space-y-2">
@@ -109,45 +121,130 @@ export function DownloadQueue({
         <h2 className="text-sm font-semibold text-gray-400">
           {songCount !== null ? `Songs: ${songCount.toLocaleString()}` : 'Songs'}
         </h2>
-        <select
-          value={sortKey}
-          onChange={e => setSortKey(e.target.value as SortKey)}
-          className="bg-gray-800 border border-gray-700 rounded-md px-2 py-1 text-xs
-                     text-gray-300 focus:outline-none focus:ring-2 focus:ring-purple-500"
-        >
-          {SORT_OPTIONS.map(o => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { setUrlOpen(o => !o); setUrlError(''); }}
+            className="text-xs px-2.5 py-1 rounded-md bg-gray-700 hover:bg-gray-600 text-gray-300 transition"
+          >
+            📥 From URL
+          </button>
+          <select
+            value={sortKey}
+            onChange={e => setSortKey(e.target.value as SortKey)}
+            className="bg-gray-800 border border-gray-700 rounded-md px-2 py-1 text-xs
+                       text-gray-300 focus:outline-none focus:ring-2 focus:ring-purple-500"
+          >
+            {SORT_OPTIONS.map(o => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
-      {sorted.map(dp => (
-        <DownloadItem
-          key={dp.md5}
-          item={dp}
-          onCancel={() => handleCancel(dp.md5)}
-          onDelete={() => handleDelete(dp.md5)}
-        />
-      ))}
+      {/* URL install panel */}
+      {urlOpen && (
+        <div className="bg-gray-900 border border-gray-700 rounded-xl p-4 space-y-2">
+          <p className="text-xs text-gray-400">
+            Paste a direct link to a <code className="text-purple-400">.sng</code> or <code className="text-purple-400">.zip</code> chart pack.
+          </p>
+          <div className="flex gap-2">
+            <input
+              type="url"
+              value={urlInput}
+              onChange={e => { setUrlInput(e.target.value); setUrlError(''); }}
+              onKeyDown={e => e.key === 'Enter' && handleUrlDownload()}
+              placeholder="https://example.com/chart.zip"
+              className="flex-1 min-w-0 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+            />
+            <button
+              onClick={handleUrlDownload}
+              disabled={urlBusy || !urlInput.trim()}
+              className="shrink-0 px-4 py-2 bg-purple-700 hover:bg-purple-600 disabled:opacity-50 text-sm text-white rounded-lg transition"
+            >
+              {urlBusy ? '…' : 'Download'}
+            </button>
+          </div>
+          {urlError && <p className="text-xs text-red-400">{urlError}</p>}
+        </div>
+      )}
+
+      {sorted.length === 0 ? (
+        <div className="text-center py-16 text-gray-500">
+          <div className="text-4xl mb-3">📦</div>
+          <p className="text-sm">No downloads yet.</p>
+          <p className="text-xs mt-1">Search for a song and hit the download button!</p>
+        </div>
+      ) : (
+        <>
+          {/* ── Active / queued items ─────────────────────── */}
+          {activeItems.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">In Progress</span>
+                <span className="px-1.5 py-0.5 rounded bg-purple-900/40 text-purple-300 text-xs font-medium">
+                  {activeItems.length}
+                </span>
+              </div>
+              {activeItems.map(dp => (
+                <DownloadItem
+                  key={dp.md5}
+                  item={dp}
+                  onCancel={() => handleCancel(dp.md5)}
+                  onDelete={() => handleDelete(dp.md5)}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* ── Completed items ───────────────────────────── */}
+          {doneItems.length > 0 && (
+            <div className="space-y-2">
+              {activeItems.length > 0 && (
+                <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">History</span>
+              )}
+              {doneItems.map(dp => (
+                <DownloadItem
+                  key={dp.md5}
+                  item={dp}
+                  onCancel={() => handleCancel(dp.md5)}
+                  onDelete={() => handleDelete(dp.md5)}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
 
-function DownloadItem({
+export function DownloadItem({
   item,
   onCancel,
   onDelete,
+  readOnly = false,
+  defaultExpanded = false,
+  selectMode = false,
+  isSelected = false,
+  onToggleSelect,
 }: {
   item: DownloadProgress;
-  onCancel: () => void;
-  onDelete: () => void;
+  onCancel?: () => void;
+  onDelete?: () => void;
+  readOnly?: boolean;
+  defaultExpanded?: boolean;
+  selectMode?: boolean;
+  isSelected?: boolean;
+  onToggleSelect?: () => void;
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [expanded, setExpanded] = useState(false);
-  // Once done, try local art first; fall back to CDN while in progress
-  const artUrl = item.status === 'done'
-    ? localArtUrl(item.md5)
-    : albumArtUrl(item.albumArtMd5 ?? null);
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  // SRB = Clone Hero built-in song; use the bundled icon as album art
+  const artUrl = item.md5.startsWith('srb-')
+    ? '/cloneHeroIcon.webp'
+    : item.status === 'done'
+      ? localArtUrl(item.md5)
+      : albumArtUrl(item.albumArtMd5 ?? null);
 
   const statusColors: Record<string, string> = {
     queued:      'text-gray-400',
@@ -166,134 +263,142 @@ function DownloadItem({
   };
 
   const chart = item.chart;
-  const instruments = chart ? buildInstrumentList(chart) : [];
   const duration = chart?.song_length ? formatMs(chart.song_length) : null;
 
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-xl hover:border-gray-700 transition">
+    <div className={`bg-gray-900 border rounded-xl transition ${
+      selectMode && isSelected ? 'border-purple-600 hover:border-purple-500' : 'border-gray-800 hover:border-gray-700'
+    }`}>
       {/* ── Collapsed row ──────────────────────────── */}
       <div
-        className="p-3 flex gap-3 cursor-pointer"
-        onClick={() => setExpanded(e => !e)}
+        className="p-3 cursor-pointer"
+        onClick={() => selectMode ? (item.status === 'done' && onToggleSelect?.()) : setExpanded(e => !e)}
       >
-        {/* Album art */}
-        <div className="shrink-0 w-14 h-14 sm:w-16 sm:h-16 rounded-lg bg-gray-800 overflow-hidden">
-          {artUrl ? (
-            <img
-              src={artUrl}
-              alt=""
-              className="w-full h-full object-cover"
-              loading="lazy"
-              onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-2xl text-gray-600">
-              {item.status === 'done' ? '🎵' : statusIcons[item.status] ?? '🎵'}
-            </div>
-          )}
-        </div>
+        {/* Main row */}
+        <div className="flex gap-3">
+          {/* Album art */}
+          <div className="shrink-0 w-14 h-14 sm:w-20 sm:h-20 rounded-lg bg-gray-800 overflow-hidden">
+            {artUrl ? (
+              <img
+                src={artUrl}
+                alt=""
+                className="w-full h-full object-cover"
+                loading="lazy"
+                onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-2xl text-gray-600">
+                {item.status === 'done' ? '🎵' : statusIcons[item.status] ?? '🎵'}
+              </div>
+            )}
+          </div>
 
-        {/* Info */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <h3 className="font-semibold text-sm leading-tight truncate">
-                {item.name}
-              </h3>
-              <p className="text-xs text-gray-400 truncate">
-                {item.artist}
-                {chart?.album ? ` — ${chart.album}` : ''}
-              </p>
-            </div>
+          {/* Info */}
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-sm sm:text-base leading-tight truncate">
+              {item.name}
+            </h3>
+            <p className="text-xs sm:text-sm text-gray-400 truncate">
+              {item.artist}
+              {chart?.album ? ` — ${chart.album}` : ''}
+            </p>
 
-            {/* Cancel (queued/error) */}
-            {(item.status === 'queued' || item.status === 'error') && (
-              <button
-                onClick={e => { e.stopPropagation(); onCancel(); }}
-                className="shrink-0 text-gray-500 hover:text-red-400 transition p-1"
-                title="Remove"
-              >
-                <XIcon />
-              </button>
+            {/* Status row (only for in-progress items) */}
+            {item.status !== 'done' && (
+              <div className="flex items-center gap-2 mt-1">
+                <span className={`text-xs font-medium ${statusColors[item.status]}`}>
+                  {statusIcons[item.status]}{' '}
+                  {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
+                </span>
+                {item.percent != null && item.status === 'downloading' && (
+                  <div className="flex-1 max-w-32 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-blue-500 transition-all duration-300"
+                      style={{ width: `${item.percent}%` }}
+                    />
+                  </div>
+                )}
+                {item.error && (
+                  <span className="text-xs text-red-400 truncate">{item.error}</span>
+                )}
+              </div>
             )}
 
-            {/* Trash (done — deletes files from disk) */}
-            {item.status === 'done' && (
-              confirmDelete ? (
-                <div className="shrink-0 flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                  <span className="text-[11px] text-red-400">Delete files?</span>
+            {/* Meta row */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1 text-xs text-gray-500">
+              <span title="Charter">🎤 {stripRichText(item.charter)}</span>
+              {chart?.genre && <span>{chart.genre}</span>}
+              {chart?.year && <span>{chart.year}</span>}
+              {duration && <span>{duration}</span>}
+            </div>
+          </div>
+
+          {/* Right: desktop badges + action controls */}
+          <div className="shrink-0 flex items-start gap-2">
+            {/* Badges - desktop only, hidden in select mode */}
+            {chart && !selectMode && (
+              <div className="hidden sm:block">
+                <InstrumentBadgeRow chart={chart} className="justify-end" />
+              </div>
+            )}
+            {/* Checkbox (select mode) or action buttons */}
+            {selectMode ? (
+              <div
+                className="flex items-center justify-center self-center p-1"
+                onClick={e => { e.stopPropagation(); if (item.status === 'done') onToggleSelect?.(); }}
+              >
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  disabled={item.status !== 'done'}
+                  onChange={() => {}}
+                  className="w-5 h-5 accent-purple-500 cursor-pointer disabled:opacity-30 pointer-events-none"
+                />
+              </div>
+            ) : !readOnly ? (
+              <div onClick={e => e.stopPropagation()}>
+                {(item.status === 'queued' || item.status === 'error') && (
                   <button
-                    onClick={onDelete}
-                    className="text-red-500 hover:text-red-300 transition p-1"
-                    title="Confirm delete"
-                  >
-                    <TrashIcon />
-                  </button>
-                  <button
-                    onClick={() => setConfirmDelete(false)}
-                    className="text-gray-500 hover:text-gray-300 transition p-1"
-                    title="Cancel"
+                    onClick={onCancel}
+                    className="text-gray-500 hover:text-red-400 transition p-1"
+                    title="Remove"
                   >
                     <XIcon />
                   </button>
-                </div>
-              ) : (
-                <button
-                  onClick={e => { e.stopPropagation(); setConfirmDelete(true); }}
-                  className="shrink-0 text-gray-600 hover:text-red-400 transition p-1"
-                  title="Delete song files from disk"
-                >
-                  <TrashIcon />
-                </button>
-              )
-            )}
+                )}
+                {item.status === 'done' && (
+                  confirmDelete ? (
+                    <div className="flex items-center gap-1">
+                      <span className="text-[11px] text-red-400">Delete?</span>
+                      <button onClick={onDelete} className="text-red-500 hover:text-red-300 transition p-1" title="Confirm delete">
+                        <TrashIcon />
+                      </button>
+                      <button onClick={() => setConfirmDelete(false)} className="text-gray-500 hover:text-gray-300 transition p-1" title="Cancel">
+                        <XIcon />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setConfirmDelete(true)}
+                      className="text-gray-600 hover:text-red-400 transition p-1"
+                      title="Delete song files from disk"
+                    >
+                      <TrashIcon />
+                    </button>
+                  )
+                )}
+              </div>
+            ) : null}
           </div>
-
-          {/* Status row (only for in-progress items) */}
-          {item.status !== 'done' && (
-            <div className="flex items-center gap-2 mt-1">
-              <span className={`text-xs font-medium ${statusColors[item.status]}`}>
-                {statusIcons[item.status]}{' '}
-                {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
-              </span>
-              {item.percent != null && item.status === 'downloading' && (
-                <div className="flex-1 max-w-32 h-1.5 bg-gray-800 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-blue-500 transition-all duration-300"
-                    style={{ width: `${item.percent}%` }}
-                  />
-                </div>
-              )}
-              {item.error && (
-                <span className="text-xs text-red-400 truncate">{item.error}</span>
-              )}
-            </div>
-          )}
-
-          {/* Meta row */}
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1 text-[11px] text-gray-500">
-            <span title="Charter">🎤 {stripRichText(item.charter)}</span>
-            {chart?.genre && <span>{chart.genre}</span>}
-            {chart?.year && <span>{chart.year}</span>}
-            {duration && <span>{duration}</span>}
-          </div>
-
-          {/* Instrument + EMHX badges */}
-          {instruments.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mt-1.5">
-              {instruments.map(inst => (
-                <div
-                  key={inst.name}
-                  className="flex items-center gap-1 bg-gray-800 rounded px-1.5 py-0.5"
-                  title={inst.name}
-                >
-                  <span className="text-[10px]">{inst.icon}</span>
-                  <DifficultyPills instrument={inst.key} noteCounts={chart?.notesData?.noteCounts ?? []} />
-                </div>
-              ))}
-            </div>
-          )}
         </div>
+
+        {/* Mobile badge footer row */}
+        {chart && !selectMode && (
+          <div className="sm:hidden flex gap-3 mt-2">
+            <div className="w-14 shrink-0" />
+            <InstrumentBadgeRow chart={chart} className="justify-start" large={true} />
+          </div>
+        )}
       </div>
 
       {/* ── Expanded detail panel ──────────────────── */}
@@ -308,8 +413,8 @@ function DownloadExpandedPanel({ item }: { item: DownloadProgress }) {
   const chart = item.chart;
   const nd = chart?.notesData;
 
-  // Lazy-fetch full chart data from Enchor.us when expanded
-  const needsEnrich = item.status === 'done' && (!chart || (chart.chartId === 0 && !nd));
+  // SRB songs are Clone Hero built-ins - no Enchor.us data to fetch
+  const needsEnrich = item.status === 'done' && !item.md5.startsWith('srb-') && (!chart || (chart.chartId === 0 && !nd));
 
   useEffect(() => {
     if (!needsEnrich) return;
@@ -332,11 +437,13 @@ function DownloadExpandedPanel({ item }: { item: DownloadProgress }) {
     { label: 'Video Background', value: chart.hasVideoBackground },
   ] : [];
 
-  const defaultInstrument = chart ? (buildInstrumentList(chart)[0]?.key ?? 'guitar') : 'guitar';
+  const defaultInstrument = chart
+    ? (INST_DEFS.find(d => (chart as any)[d.diffKey] != null && (chart as any)[d.diffKey] >= 0)?.key ?? 'guitar')
+    : 'guitar';
 
-  // Use enriched chart's real Enchor md5 for preview; scan items get this after enrichment
+  // Use enriched chart's real Enchor md5 for preview; SRB/scan items have no Enchor data
   const previewMd5 = chart && chart.chartId !== 0 ? chart.md5
-    : !item.md5.startsWith('scan-') ? item.md5
+    : !item.md5.startsWith('scan-') && !item.md5.startsWith('srb-') ? item.md5
     : null;
 
   return (
@@ -562,51 +669,4 @@ function formatMs(ms: number): string {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
-}
-
-interface InstrumentBadge { key: string; name: string; icon: string; }
-
-function buildInstrumentList(chart: ChartResult): InstrumentBadge[] {
-  const list: InstrumentBadge[] = [];
-  const add = (diffKey: string, ncKey: string, name: string, icon: string) => {
-    const val = (chart as any)[diffKey];
-    if (val != null && val >= 0) list.push({ key: ncKey, name, icon });
-  };
-  add('diff_guitar',     'guitar',     'Guitar', '🎸');
-  add('diff_bass',       'bass',       'Bass',   '🎸');
-  add('diff_rhythm',     'rhythm',     'Rhythm', '🎸');
-  add('diff_drums',      'drums',      'Drums',  '🥁');
-  add('diff_keys',       'keys',       'Keys',   '🎹');
-  add('diff_vocals',     'vocals',     'Vocals', '🎤');
-  add('diff_guitar_coop','guitarcoop', 'Co-op',  '🎸');
-  add('diff_guitarghl',  'guitarghl',  'GHL',    '🎸');
-  return list;
-}
-
-const DIFF_TIERS = [
-  { key: 'easy',   label: 'E' },
-  { key: 'medium', label: 'M' },
-  { key: 'hard',   label: 'H' },
-  { key: 'expert', label: 'X' },
-] as const;
-
-function DifficultyPills({ instrument, noteCounts }: { instrument: string; noteCounts: NoteCount[] }) {
-  const available = new Set(
-    noteCounts.filter(nc => nc.instrument === instrument).map(nc => nc.difficulty),
-  );
-  return (
-    <div className="flex gap-px">
-      {DIFF_TIERS.map(d => (
-        <span
-          key={d.key}
-          className={`text-[10px] font-bold font-mono w-3 text-center leading-none ${
-            available.has(d.key) ? 'text-green-400' : 'text-gray-700'
-          }`}
-          title={d.key.charAt(0).toUpperCase() + d.key.slice(1)}
-        >
-          {d.label}
-        </span>
-      ))}
-    </div>
-  );
 }

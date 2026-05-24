@@ -29,19 +29,51 @@ export async function searchCharts(body: SearchRequest): Promise<SearchResponse>
 
 /** Proxy an advanced search to Enchor.us and return the JSON result. */
 export async function advancedSearchCharts(body: AdvancedSearchRequest): Promise<SearchResponse> {
-  const res = await fetch(`${API_BASE}/advancedSearch`, {
+  const payload: Record<string, unknown> = {
+    source: 'api',
+    per_page: body.per_page ?? 25,
+    page: body.page,
+  };
+
+  if (body.instrument)    payload.instrument    = body.instrument;
+  if (body.difficulty)    payload.difficulty    = body.difficulty;
+  if (body.drumType)      payload.drumType      = body.drumType;
+  if (body.drumsReviewed) payload.drumsReviewed = body.drumsReviewed;
+  if (body.sort)          payload.sort          = body.sort;
+
+  for (const field of ['name', 'artist', 'album', 'genre', 'year', 'charter'] as const) {
+    if (body[field]?.value) payload[field] = body[field];
+  }
+
+  for (const field of [
+    'minLength', 'maxLength', 'minIntensity', 'maxIntensity',
+    'minAverageNPS', 'maxAverageNPS', 'minMaxNPS', 'maxMaxNPS',
+    'minYear', 'maxYear',
+  ] as const) {
+    if ((body as any)[field] != null) payload[field] = (body as any)[field];
+  }
+
+  for (const field of [
+    'hasForcedNotes', 'hasOpenNotes', 'hasTapNotes', 'hasSoloSections',
+    'hasLyrics', 'hasVocals', 'hasRollLanes', 'has2xKick',
+    'hasIssues', 'hasVideoBackground', 'modchart',
+  ] as const) {
+    if ((body as any)[field] != null) payload[field] = (body as any)[field];
+  }
+
+  if (body.modifiedAfter) payload.modifiedAfter = body.modifiedAfter;
+  if (body.hash)          payload.hash          = body.hash;
+  if (body.trackHash)     payload.trackHash     = body.trackHash;
+
+  const res = await fetch(`${API_BASE}/search/advanced`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      ...body,
-      source: 'api',
-      per_page: body.per_page ?? 25,
-    }),
+    body: JSON.stringify(payload),
   });
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Enchor.us advanced search failed (${res.status}): ${text}`);
+    throw new Error(`Enchor search/advanced failed (${res.status}): ${text}`);
   }
 
   return res.json() as Promise<SearchResponse>;

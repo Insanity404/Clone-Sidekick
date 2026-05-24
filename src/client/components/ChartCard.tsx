@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect, Component, type ReactNode } from 'react';
 import { albumArtUrl } from '../api';
-import type { ChartResult, NoteCount } from '../../shared/types';
+import type { ChartResult } from '../../shared/types';
 import type { ChartPreviewPlayer } from 'chart-preview';
 import 'chart-preview';
+import { InstrumentBadgeRow, INST_DEFS } from './InstrumentBadges';
 
 // ── Error Boundary (prevents full-page crash from web component) ─
 
@@ -21,95 +22,106 @@ interface ChartCardProps {
   onDownload: () => void;
   isDownloading: boolean;
   isDownloaded: boolean;
+  hasSimilarVersion?: boolean;
 }
 
-export function ChartCard({ chart, onDownload, isDownloading, isDownloaded }: ChartCardProps) {
+export function ChartCard({ chart, onDownload, isDownloading, isDownloaded, hasSimilarVersion }: ChartCardProps) {
   const [expanded, setExpanded] = useState(false);
   const artUrl = albumArtUrl(chart.albumArtMd5);
   const duration = chart.song_length ? formatMs(chart.song_length) : null;
-  const instruments = buildInstrumentList(chart);
 
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-xl hover:border-gray-700 transition">
+    <div className={`bg-gray-900 border rounded-xl transition ${
+      isDownloaded
+        ? 'border-gray-800 hover:border-gray-700'
+        : hasSimilarVersion
+          ? 'border-amber-900/50 hover:border-amber-800/70'
+          : 'border-gray-800 hover:border-gray-700'
+    }`}>
       {/* ── Collapsed row ──────────────────────────── */}
       <div
-        className="p-3 flex gap-3 cursor-pointer"
+        className="p-3 cursor-pointer"
         onClick={() => setExpanded(e => !e)}
       >
-        {/* Album art */}
-        <div className="shrink-0 w-14 h-14 sm:w-16 sm:h-16 rounded-lg bg-gray-800 overflow-hidden">
-          {artUrl ? (
-            <img src={artUrl} alt="" className="w-full h-full object-cover" loading="lazy" />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-2xl text-gray-600">🎵</div>
-          )}
+        {/* Main row */}
+        <div className="flex gap-3">
+          {/* Album art */}
+          <div className="shrink-0 w-14 h-14 sm:w-20 sm:h-20 rounded-lg bg-gray-800 overflow-hidden">
+            {artUrl ? (
+              <img src={artUrl} alt="" className="w-full h-full object-cover" loading="lazy" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-2xl text-gray-600">🎵</div>
+            )}
+          </div>
+
+          {/* Info */}
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-sm sm:text-base leading-tight truncate">
+              {chart.name ?? 'Unknown Song'}
+            </h3>
+            <p className="text-xs sm:text-sm text-gray-400 truncate">
+              {chart.artist ?? 'Unknown Artist'}
+              {chart.album ? ` — ${chart.album}` : ''}
+            </p>
+            {/* Meta row */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1 text-xs text-gray-500">
+              {chart.charter && <span title="Charter">🎤 {chart.charter}</span>}
+              {chart.genre && <span>{chart.genre}</span>}
+              {chart.year && <span>{chart.year}</span>}
+              {duration && <span>{duration}</span>}
+            </div>
+          </div>
+
+          {/* Right: desktop badges + controls on same row */}
+          <div className="shrink-0 flex items-start gap-2">
+            {/* Badges — desktop only */}
+            <div className="hidden sm:block">
+              <InstrumentBadgeRow chart={chart} className="justify-end" />
+            </div>
+            {/* Controls */}
+            <div className="flex items-center gap-1.5">
+              {hasSimilarVersion && (
+                <span
+                  title="You already have a version of this song"
+                  className="flex items-center justify-center w-6 h-6 rounded-full bg-amber-500/15 text-amber-400 cursor-help"
+                >
+                  <SimilarIcon />
+                </span>
+              )}
+              <button
+                onClick={e => { e.stopPropagation(); if (!isDownloaded) onDownload(); }}
+                disabled={isDownloading || isDownloaded}
+                className={`shrink-0 rounded-lg p-2 transition ${
+                  isDownloaded
+                    ? 'bg-green-700/30 text-green-400 cursor-default'
+                    : isDownloading
+                      ? 'bg-gray-700/50 text-gray-400 cursor-default'
+                      : 'bg-purple-600 hover:bg-purple-500 text-white active:scale-95'
+                }`}
+                title={isDownloaded ? 'Already in library' : isDownloading ? 'Downloading...' : 'Download to Clone Hero'}
+              >
+                {(isDownloaded || isDownloading) ? <CheckIcon /> : <DownloadIcon />}
+              </button>
+            </div>
+          </div>
         </div>
 
-        {/* Info */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <h3 className="font-semibold text-sm leading-tight truncate">
-                {chart.name ?? 'Unknown Song'}
-              </h3>
-              <p className="text-xs text-gray-400 truncate">
-                {chart.artist ?? 'Unknown Artist'}
-                {chart.album ? ` — ${chart.album}` : ''}
-              </p>
-            </div>
-
-            {/* Download button */}
-            <button
-              onClick={e => { e.stopPropagation(); if (!isDownloaded) onDownload(); }}
-              disabled={isDownloading || isDownloaded}
-              className={`shrink-0 rounded-lg p-2 transition ${
-                isDownloaded
-                  ? 'bg-green-700/30 text-green-400 cursor-default'
-                  : isDownloading
-                    ? 'bg-gray-700/50 text-gray-400 cursor-default'
-                    : 'bg-purple-600 hover:bg-purple-500 text-white active:scale-95'
-              }`}
-              title={isDownloaded ? 'Already in library' : isDownloading ? 'Downloading...' : 'Download to Clone Hero'}
-            >
-              {(isDownloaded || isDownloading) ? <CheckIcon /> : <DownloadIcon />}
-            </button>
-          </div>
-
-          {/* Meta row */}
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1 text-[11px] text-gray-500">
-            {chart.charter && <span title="Charter">🎤 {chart.charter}</span>}
-            {chart.genre && <span>{chart.genre}</span>}
-            {chart.year && <span>{chart.year}</span>}
-            {duration && <span>{duration}</span>}
-          </div>
-
-          {/* Instrument + EMHX badges */}
-          {instruments.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mt-1.5">
-              {instruments.map(inst => (
-                <div
-                  key={inst.name}
-                  className="flex items-center gap-1 bg-gray-800 rounded px-1.5 py-0.5"
-                  title={inst.name}
-                >
-                  <span className="text-[10px]">{inst.icon}</span>
-                  <DifficultyPills instrument={inst.key} noteCounts={chart.notesData?.noteCounts ?? []} />
-                </div>
-              ))}
-            </div>
-          )}
+        {/* Mobile badge footer row */}
+        <div className="sm:hidden flex gap-3 mt-2">
+          <div className="w-14 shrink-0" />
+          <InstrumentBadgeRow chart={chart} className="justify-start" large />
         </div>
       </div>
 
       {/* ── Expanded detail panel ──────────────────── */}
-      {expanded && <ExpandedPanel chart={chart} instruments={instruments} />}
+      {expanded && <ExpandedPanel chart={chart} />}
     </div>
   );
 }
 
 // ── Expanded detail panel ───────────────────────────────────────
 
-function ExpandedPanel({ chart, instruments }: { chart: ChartResult; instruments: InstrumentBadge[] }) {
+function ExpandedPanel({ chart }: { chart: ChartResult }) {
   const [showPreview, setShowPreview] = useState(false);
 
   const nd = chart.notesData;
@@ -126,8 +138,9 @@ function ExpandedPanel({ chart, instruments }: { chart: ChartResult; instruments
     { label: 'Video Background', value: chart.hasVideoBackground },
   ];
 
-  // Pick the first available instrument for preview default
-  const defaultInstrument = instruments[0]?.key ?? 'guitar';
+  const defaultInstrument = INST_DEFS.find(
+    d => (chart as any)[d.diffKey] != null && (chart as any)[d.diffKey] >= 0
+  )?.key ?? 'guitar';
 
   return (
     <div className="border-t border-gray-800 px-4 pb-4 pt-3 space-y-3">
@@ -289,43 +302,6 @@ function ChartPreview({ chart, instrument }: { chart: ChartResult; instrument: s
   );
 }
 
-// ── EMHX pills ──────────────────────────────────────────────────
-
-const DIFF_TIERS = [
-  { key: 'easy',   label: 'E' },
-  { key: 'medium', label: 'M' },
-  { key: 'hard',   label: 'H' },
-  { key: 'expert', label: 'X' },
-] as const;
-
-function DifficultyPills({
-  instrument,
-  noteCounts,
-}: {
-  instrument: string;
-  noteCounts: NoteCount[];
-}) {
-  const available = new Set(
-    noteCounts.filter(nc => nc.instrument === instrument).map(nc => nc.difficulty),
-  );
-
-  return (
-    <div className="flex gap-px">
-      {DIFF_TIERS.map(d => (
-        <span
-          key={d.key}
-          className={`text-[10px] font-bold font-mono w-3 text-center leading-none ${
-            available.has(d.key) ? 'text-green-400' : 'text-gray-700'
-          }`}
-          title={d.key.charAt(0).toUpperCase() + d.key.slice(1)}
-        >
-          {d.label}
-        </span>
-      ))}
-    </div>
-  );
-}
-
 // ── Helpers ─────────────────────────────────────────────────────
 
 function formatMs(ms: number): string {
@@ -335,30 +311,14 @@ function formatMs(ms: number): string {
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
-interface InstrumentBadge {
-  key: string;   // matches noteCounts instrument key
-  name: string;
-  icon: string;
-}
-
-function buildInstrumentList(chart: ChartResult): InstrumentBadge[] {
-  const list: InstrumentBadge[] = [];
-
-  const add = (diffKey: string, ncKey: string, name: string, icon: string) => {
-    const val = (chart as any)[diffKey];
-    if (val != null && val >= 0) list.push({ key: ncKey, name, icon });
-  };
-
-  add('diff_guitar',     'guitar',          'Guitar',     '🎸');
-  add('diff_bass',       'bass',            'Bass',       '🎸');
-  add('diff_rhythm',     'rhythm',          'Rhythm',     '🎸');
-  add('diff_drums',      'drums',           'Drums',      '🥁');
-  add('diff_keys',       'keys',            'Keys',       '🎹');
-  add('diff_vocals',     'vocals',          'Vocals',     '🎤');
-  add('diff_guitar_coop','guitarcoop',      'Co-op',      '🎸');
-  add('diff_guitarghl',  'guitarghl',       'GHL',        '🎸');
-
-  return list;
+function SimilarIcon() {
+  return (
+    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 19V6l12-3v13" />
+      <circle cx="6" cy="19" r="3" fill="currentColor" stroke="none" />
+      <circle cx="18" cy="16" r="3" fill="currentColor" stroke="none" />
+    </svg>
+  );
 }
 
 function DownloadIcon() {

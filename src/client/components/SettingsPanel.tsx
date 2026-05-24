@@ -12,9 +12,13 @@ export function SettingsPanel() {
   const [suggestion, setSuggestion] = useState('');
   const [dirState, setDirState] = useState<{ ok: boolean; warning?: string; error?: string } | null>(null);
   const [dirChecking, setDirChecking] = useState(false);
+  const [yargDirState, setYargDirState] = useState<{ ok: boolean; warning?: string; error?: string } | null>(null);
+  const [yargDirChecking, setYargDirChecking] = useState(false);
   const [emailsRaw, setEmailsRaw] = useState('');
   const [showSecret, setShowSecret] = useState(false);
   const [secretEdited, setSecretEdited] = useState(false);
+  const [showTunnelToken, setShowTunnelToken] = useState(false);
+  const [tunnelTokenEdited, setTunnelTokenEdited] = useState(false);
   const [dlFormat, setDlFormat] = useState<DownloadFormat>('folder');
   const [dlVideoBackground, setDlVideoBackground] = useState(false);
   const [currentPrefs, setCurrentPrefs] = useState<any>(null);
@@ -86,6 +90,15 @@ export function SettingsPanel() {
     setDirChecking(false);
   }
 
+  async function handleVerifyYargDir() {
+    if (!form?.yargSongsDir) return;
+    setYargDirChecking(true);
+    setYargDirState(null);
+    const r = await validateDir(form.yargSongsDir);
+    setYargDirState(r);
+    setYargDirChecking(false);
+  }
+
   function handleEmailsChange(value: string) {
     setEmailsRaw(value);
     const emails = value.split('\n').map(e => e.trim().toLowerCase()).filter(Boolean);
@@ -109,41 +122,49 @@ export function SettingsPanel() {
   return (
     <div className="space-y-6 max-w-3xl mx-auto pb-8">
 
-      {/* ── About & Support ─────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row sm:items-stretch gap-4">
-        <div className="flex-1 bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-3">
-          <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-            <span>🎸</span> About Clone Sidekick
-          </h3>
-          <p className="text-sm text-gray-300 leading-relaxed">
-            Clone Sidekick was created to make finding and installing custom
-            charts for <a href="https://clonehero.net" target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:text-purple-300 underline underline-offset-2">Clone Hero</a> as
-            painless as possible. Browse, preview, and download charts from{' '}
-            <a
-              href="https://enchor.us"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-purple-400 hover:text-purple-300 underline underline-offset-2"
-            >
-              Enchor.us
-            </a>{' '}
-            straight into your songs folder &mdash; no manual ZIP wrangling
-            needed. From the couch to the PC!
-          </p>
-          <p className="text-sm text-gray-300 leading-relaxed">
-            This is a free, open-source project built for the Clone Hero
-            community. If you find it useful and want to support continued
-            development, a small donation on Ko-fi goes a long way!
-          </p>
+      {/* ── About ───────────────────────────────────────────────── */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-3">
+        <div className="flex justify-center">
+          <img src="/guitar_cape_icon_512x512.png" alt="Clone Sidekick" className="w-40 h-40 sm:w-64 sm:h-64 object-contain" />
         </div>
-        <div className="sm:w-[330px] shrink-0 bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-          <iframe
-            src="https://ko-fi.com/1nsanity/?hidefeed=true&widget=true&embed=true&preview=true"
-            className="w-full border-none"
-            style={{ border: 'none', width: '100%', padding: 4, background: '#f9f9f9' }}
-            height="712"
-            title="Support on Ko-fi"
-          />
+        <h3 className="text-sm font-semibold text-white">
+          About Clone Sidekick
+        </h3>
+        <p className="text-sm text-gray-300 leading-relaxed">
+          Clone Sidekick was created to make finding and installing custom
+          charts for <a href="https://clonehero.net" target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:text-purple-300 underline underline-offset-2">Clone Hero</a> as
+          painless as possible. Browse, preview, and download charts from{' '}
+          <a
+            href="https://enchor.us"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-purple-400 hover:text-purple-300 underline underline-offset-2"
+          >
+            Enchor.us
+          </a>{' '}
+          straight into your songs folder. No manual ZIP wrangling
+          needed. From the couch to the PC!
+        </p>
+        <p className="text-sm text-gray-300 leading-relaxed">
+          This is a free, open-source project built for the Clone Hero
+          community. If you find it useful, be sure to share it with your friends.
+        </p>
+        <div className="pt-1">
+          <a
+            href="https://github.com/Insanity404/Clone-Sidekick"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-3 px-5 py-3 rounded-xl bg-gray-800 hover:bg-gray-700 border border-gray-700 hover:border-gray-500 transition group"
+          >
+            <GitHubIcon />
+            <div className="text-left">
+              <div className="text-sm font-semibold text-white group-hover:text-purple-300 transition">Insanity404 / Clone-Sidekick</div>
+              <div className="text-xs text-gray-400">View source, report issues, contribute</div>
+            </div>
+            <svg className="w-4 h-4 text-gray-500 group-hover:text-gray-300 transition ml-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            </svg>
+          </a>
         </div>
       </div>
 
@@ -169,6 +190,32 @@ export function SettingsPanel() {
         {dirState && (
           <p className={`text-xs mt-1 ${dirState.ok ? 'text-green-400' : 'text-red-400'}`}>
             {dirState.ok ? (dirState.warning ?? '✓ Directory found') : `✗ ${dirState.error}`}
+          </p>
+        )}
+      </Section>
+
+      {/* ── YARG Songs Directory ────────────────────────────────── */}
+      <Section title="YARG Songs Directory" desc="Optional. When set, charts are also installed here after every Clone Hero download.">
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={form.yargSongsDir}
+            onChange={e => { patch({ yargSongsDir: e.target.value }); setYargDirState(null); }}
+            onBlur={onBlurSave}
+            placeholder="e.g. C:\Users\YourName\AppData\LocalLow\tgk\YARG\songs"
+            className="flex-1 min-w-0 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+          />
+          <button
+            onClick={handleVerifyYargDir}
+            disabled={yargDirChecking || !form.yargSongsDir}
+            className="shrink-0 px-3 py-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-sm text-white rounded-lg transition"
+          >
+            {yargDirChecking ? '…' : 'Verify'}
+          </button>
+        </div>
+        {yargDirState && (
+          <p className={`text-xs mt-1 ${yargDirState.ok ? 'text-green-400' : 'text-red-400'}`}>
+            {yargDirState.ok ? (yargDirState.warning ?? '✓ Directory found') : `✗ ${yargDirState.error}`}
           </p>
         )}
       </Section>
@@ -281,8 +328,38 @@ export function SettingsPanel() {
           />
         </div>
         {form.tunnel.enabled && (
-          <div className="mt-3">
-            <Field label="Hostname" hint="e.g. guitar.example.com">
+          <div className="mt-3 space-y-3">
+            <Field label="Tunnel Token" hint={
+              tunnelTokenEdited
+                ? 'Token will be saved encrypted.'
+                : form.tunnel.token
+                  ? 'Showing masked value — type to replace.'
+                  : 'Paste the token from Cloudflare Zero Trust → Networks → Tunnels.'
+            }>
+              <div className="relative">
+                <input
+                  type={showTunnelToken ? 'text' : 'password'}
+                  value={form.tunnel.token}
+                  onChange={e => {
+                    setTunnelTokenEdited(true);
+                    patch({ tunnel: { ...form.tunnel, token: e.target.value } });
+                  }}
+                  onBlur={onBlurSave}
+                  placeholder="eyJh…"
+                  className={`w-full bg-gray-900 border rounded-lg px-3 py-2 pr-14 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 ${
+                    !tunnelTokenEdited && form.tunnel.token ? 'border-yellow-800/60' : 'border-gray-700'
+                  }`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowTunnelToken(s => !s)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500 hover:text-gray-300"
+                >
+                  {showTunnelToken ? 'Hide' : 'Show'}
+                </button>
+              </div>
+            </Field>
+            <Field label="Hostname" hint="The domain configured in your tunnel (used for Party Mode share links)">
               <input
                 type="text"
                 value={form.tunnel.hostname}
@@ -356,5 +433,13 @@ function ModeCard({ active, onClick, icon, title, desc }: {
       <div className="text-sm font-semibold text-white">{title}</div>
       <div className="text-xs text-gray-400">{desc}</div>
     </button>
+  );
+}
+
+function GitHubIcon() {
+  return (
+    <svg className="w-7 h-7 text-white shrink-0" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z" />
+    </svg>
   );
 }

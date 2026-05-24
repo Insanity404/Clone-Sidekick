@@ -151,6 +151,18 @@ export function getSongCount(): Promise<{ count: number }> {
   return json(`${BASE}/song-count`);
 }
 
+export function rescanLibrary(): Promise<DownloadProgress[]> {
+  return json(`${BASE}/library/scan`, { method: 'POST' });
+}
+
+export function downloadFromUrl(url: string): Promise<{ ok: boolean }> {
+  return json(`${BASE}/download-url`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url }),
+  });
+}
+
 // ── Helpers ─────────────────────────────────────────────────────
 
 export function albumArtUrl(hash: string | null): string | null {

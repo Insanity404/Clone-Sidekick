@@ -1,6 +1,6 @@
 {
   "name": "clone-sidekick",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "A web-based Clone Hero chart browser and downloader — search and install songs from Enchor.us via any browser on your LAN or WAN.",
   "private": true,
   "license": "GPL-3.0-only",

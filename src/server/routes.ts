@@ -9,10 +9,12 @@ import QRCode from 'qrcode';
 import { searchCharts, advancedSearchCharts } from './enchor.js';
 import {
   enqueueDownload,
+  enqueueUrlDownload,
   getQueueSnapshot,
   removeDownload,
   subscribeSSE,
   enrichSingleDownload,
+  rescanLibrary,
 } from './downloadManager.js';
 import { requireAuth, requireAdmin, isAdmin, getGuestSession } from './auth.js';
 import { config, saveConfig } from './configStore.js';
@@ -130,7 +132,15 @@ apiRouter.delete('/download/:md5', async (req: Request, res: Response) => {
       const resolved = path.resolve(destPath);
       const resolvedBase = songsDir ? path.resolve(songsDir) : null;
 
-      if (!resolvedBase || !resolved.startsWith(resolvedBase + path.sep)) {
+      // Also allow deleting from the Clone Hero default songs dir (sibling of user songs dir)
+      const defaultBase = songsDir
+        ? path.resolve(path.join(path.dirname(songsDir), 'Clone Hero_Data', 'StreamingAssets', 'songs'))
+        : null;
+
+      const inSongsDir = resolvedBase && resolved.startsWith(resolvedBase + path.sep);
+      const inDefaultDir = defaultBase && resolved.startsWith(defaultBase + path.sep);
+
+      if (!inSongsDir && !inDefaultDir) {
         res.status(403).json({ error: 'Path is outside songs directory' });
         return;
       }
@@ -151,8 +161,8 @@ apiRouter.delete('/download/:md5', async (req: Request, res: Response) => {
 
 apiRouter.get('/downloads', (req: Request, res: Response) => {
   const guest = getGuestSession(req);
-  if (guest && !guest.permissions.canBrowseLibrary) {
-    res.status(403).json({ error: 'Library access is not permitted for guests' });
+  if (guest && !guest.permissions.canBrowseLibrary && !guest.permissions.canViewDownloads && !guest.permissions.canDownload) {
+    res.status(403).json({ error: 'Downloads access is not permitted for guests' });
     return;
   }
   res.json(getQueueSnapshot());
@@ -173,7 +183,7 @@ apiRouter.post('/enrich/:md5', async (req: Request, res: Response) => {
 
 apiRouter.get('/downloads/stream', (req: Request, res: Response) => {
   const guest = getGuestSession(req);
-  if (guest && !guest.permissions.canBrowseLibrary && !guest.permissions.canDownload) {
+  if (guest && !guest.permissions.canBrowseLibrary && !guest.permissions.canViewDownloads && !guest.permissions.canDownload) {
     res.status(403).end();
     return;
   }
@@ -188,11 +198,18 @@ apiRouter.get('/downloads/stream', (req: Request, res: Response) => {
     res.write(`data: ${JSON.stringify(dp)}\n\n`);
   }
 
+  // Heartbeat every 25s - keeps the HTTP/2 stream alive through Cloudflare tunnels
+  // which close idle streams. SSE comments are ignored by the browser EventSource.
+  const heartbeat = setInterval(() => res.write(': heartbeat\n\n'), 25_000);
+
   const unsub = subscribeSSE(dp => {
     res.write(`data: ${JSON.stringify(dp)}\n\n`);
   });
 
-  req.on('close', unsub);
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    unsub();
+  });
 });
 
 // ── Local album art ───────────────────────────────────────────────
@@ -225,18 +242,62 @@ apiRouter.get('/art/local/:md5', async (req: Request, res: Response) => {
   res.status(404).end();
 });
 
+// ── Library scan ─────────────────────────────────────────────────
+
+apiRouter.post('/library/scan', requireAdmin, async (_req: Request, res: Response) => {
+  try {
+    const snapshot = await rescanLibrary();
+    res.json(snapshot);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: msg });
+  }
+});
+
+// ── URL download ──────────────────────────────────────────────────
+
+apiRouter.post('/download-url', async (req: Request, res: Response) => {
+  const guest = getGuestSession(req);
+  if (guest && !guest.permissions.canDownload) {
+    res.status(403).json({ error: 'Downloading is not permitted for guests' });
+    return;
+  }
+
+  const { url } = req.body as { url?: string };
+  if (!url || !/^https?:\/\//i.test(url)) {
+    res.status(400).json({ error: 'A valid http/https URL is required' });
+    return;
+  }
+
+  const addedBy = guest
+    ? { type: 'guest' as const, guestToken: guest.token }
+    : { type: 'admin' as const };
+
+  enqueueUrlDownload(url, addedBy);
+  res.json({ ok: true });
+});
+
 // ── Song count ────────────────────────────────────────────────────
 
 apiRouter.get('/song-count', async (_req: Request, res: Response) => {
   const songsDir = config.cloneHeroSongsDir;
-  if (!songsDir) { res.json({ count: 18 }); return; }
-  try {
-    const entries = await fs.readdir(songsDir, { withFileTypes: true });
-    const dirCount = entries.filter(e => e.isDirectory()).length;
-    res.json({ count: dirCount + 18 });
-  } catch {
-    res.json({ count: 18 });
-  }
+  if (!songsDir) { res.json({ count: 0 }); return; }
+
+  const countSongs = async (dir: string): Promise<number> => {
+    try {
+      const entries = await fs.readdir(dir, { withFileTypes: true });
+      return entries.filter(e =>
+        e.isDirectory() || (e.isFile() && e.name.toLowerCase().endsWith('.srb'))
+      ).length;
+    } catch { return 0; }
+  };
+
+  const defaultSongsDir = path.join(path.dirname(songsDir), 'Clone Hero_Data', 'StreamingAssets', 'songs');
+  const [userCount, defaultCount] = await Promise.all([
+    countSongs(songsDir),
+    countSongs(defaultSongsDir),
+  ]);
+  res.json({ count: userCount + defaultCount });
 });
 
 // ── User preferences ──────────────────────────────────────────────
@@ -323,6 +384,7 @@ apiRouter.put('/party/config', requireAdmin, async (req: Request, res: Response)
       ? {
           canBrowseSources: Boolean(incoming.defaultPermissions.canBrowseSources),
           canBrowseLibrary: Boolean(incoming.defaultPermissions.canBrowseLibrary),
+          canViewDownloads: Boolean(incoming.defaultPermissions.canViewDownloads),
           canDownload: Boolean(incoming.defaultPermissions.canDownload),
           deleteMode: ['none', 'own', 'any'].includes(incoming.defaultPermissions.deleteMode as string)
             ? incoming.defaultPermissions.deleteMode
@@ -337,7 +399,7 @@ apiRouter.put('/party/config', requireAdmin, async (req: Request, res: Response)
   res.json({ ok: true, config: updated });
 });
 
-apiRouter.post('/party/sessions', requireAdmin, (req: Request, res: Response) => {
+apiRouter.post('/party/sessions', requireAdmin, (_req: Request, res: Response) => {
   if (!config.party.enabled) {
     res.status(400).json({ error: 'Party mode is not enabled' });
     return;

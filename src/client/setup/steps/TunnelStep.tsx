@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { AppConfigTunnel } from '../../../shared/types';
 
 interface Props {
@@ -8,7 +9,8 @@ interface Props {
 }
 
 export function TunnelStep({ tunnel, onChange, onNext, onBack }: Props) {
-  const canProceed = !tunnel.enabled || !!tunnel.hostname.trim();
+  const [showToken, setShowToken] = useState(false);
+  const canProceed = !tunnel.enabled || (!!tunnel.hostname.trim() && !!tunnel.token.trim());
 
   return (
     <div className="flex flex-col gap-5">
@@ -39,25 +41,57 @@ export function TunnelStep({ tunnel, onChange, onNext, onBack }: Props) {
 
       {tunnel.enabled && (
         <div className="bg-gray-800 rounded-xl p-4 space-y-4">
-          <div className="text-sm bg-blue-900/30 rounded-lg px-3 py-2.5 space-y-1">
-            <p className="font-semibold text-blue-300">Prerequisites</p>
-            <ol className="list-decimal list-inside text-gray-400 space-y-0.5 text-xs">
+          <div className="text-sm bg-blue-900/30 rounded-lg px-3 py-2.5 space-y-1.5">
+            <p className="font-semibold text-blue-300">How to set up your tunnel</p>
+            <ol className="list-decimal list-inside text-gray-400 space-y-1 text-xs">
               <li>
-                Install <a href="https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">cloudflared</a> for your platform
+                Open{' '}
+                <a href="https://one.cloudflare.com" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">
+                  one.cloudflare.com
+                </a>{' '}
+                → Networks → Tunnels → <strong className="text-gray-300">Create a tunnel</strong>
               </li>
-              <li>Run <code className="bg-gray-900 px-1 rounded">cloudflared tunnel login</code> once to authenticate</li>
+              <li>Choose <strong className="text-gray-300">Cloudflared</strong>, give it a name (e.g. <em>sidekick</em>)</li>
+              <li>
+                Under <strong className="text-gray-300">Public Hostnames</strong>, add:<br />
+                <code className="bg-gray-900 px-1 rounded text-gray-300">guitar.yourdomain.com</code> → <code className="bg-gray-900 px-1 rounded text-gray-300">http://localhost:4440</code>
+              </li>
+              <li>Copy the <strong className="text-gray-300">tunnel token</strong> shown on the next screen</li>
             </ol>
-            <p className="text-gray-500 mt-1">The tunnel, DNS route, and config file will be created automatically when you save.</p>
+            <p className="text-gray-500 text-xs mt-1">
+              Make sure <a href="https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">cloudflared</a> is installed — the app will connect automatically using your token.
+            </p>
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-semibold text-gray-300 uppercase tracking-wide">Hostname</label>
-            <p className="text-xs text-gray-500">The domain you'll route to this app (e.g. guitar.example.com)</p>
+            <label className="text-xs font-semibold text-gray-300 uppercase tracking-wide">Tunnel Token</label>
+            <p className="text-xs text-gray-500">Paste the token from the Cloudflare dashboard</p>
+            <div className="relative">
+              <input
+                type={showToken ? 'text' : 'password'}
+                value={tunnel.token}
+                onChange={e => onChange({ ...tunnel, token: e.target.value })}
+                placeholder="eyJh…"
+                className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 pr-14 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+              />
+              <button
+                type="button"
+                onClick={() => setShowToken(s => !s)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500 hover:text-gray-300"
+              >
+                {showToken ? 'Hide' : 'Show'}
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-gray-300 uppercase tracking-wide">Your Hostname</label>
+            <p className="text-xs text-gray-500">The domain you configured above (used to generate share links)</p>
             <input
               type="text"
               value={tunnel.hostname}
               onChange={e => onChange({ ...tunnel, hostname: e.target.value })}
-              placeholder="guitar.example.com"
+              placeholder="guitar.yourdomain.com"
               className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
             />
           </div>

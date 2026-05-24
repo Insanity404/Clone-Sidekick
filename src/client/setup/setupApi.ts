@@ -9,6 +9,8 @@ export interface SetupStatus {
 export interface SafeConfig {
   port: number;
   cloneHeroSongsDir: string;
+  cloneHeroInstallDir: string;
+  yargSongsDir: string;
   auth: {
     mode: 'none' | 'google';
     google: {
@@ -18,11 +20,12 @@ export interface SafeConfig {
       allowedEmails: string[];
     };
   };
-  tunnel: { enabled: boolean; hostname: string };
+  tunnel: { enabled: boolean; hostname: string; token: string };
 }
 
 export interface SetupDefaults {
   songsDirSuggestion: string;
+  installDirSuggestion: string;
 }
 
 export interface ValidateDirResult {

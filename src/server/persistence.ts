@@ -53,8 +53,8 @@ async function persistNow(entries: DownloadProgress[]): Promise<void> {
 // ── Songs-dir scanner (fallback) ────────────────────────────────
 
 /**
- * Walk the top level of `songsDir`, find each song folder, parse
- * its song.ini for metadata, and return a list of fake "done"
+ * Walk the top level of `songsDir`, find each song folder or .srb file,
+ * parse metadata where possible, and return a list of fake "done"
  * DownloadProgress entries so the download page isn't empty.
  */
 export async function scanSongsDir(songsDir: string): Promise<DownloadProgress[]> {
@@ -68,6 +68,33 @@ export async function scanSongsDir(songsDir: string): Promise<DownloadProgress[]
   }
 
   for (const entry of entries) {
+    // .srb - Clone Hero's proprietary bundled song format.
+    if (entry.isFile() && entry.name.toLowerCase().endsWith('.srb')) {
+      const filePath = path.join(songsDir, entry.name);
+      const name = entry.name.slice(0, -4); // strip .srb
+      const key = 'srb-' + createHash('md5').update(entry.name).digest('hex').slice(0, 12);
+      let downloadedAt: string | undefined;
+      try { downloadedAt = (await fs.stat(filePath)).mtime.toISOString(); } catch { /* ignore */ }
+      const chart: ChartResult = {
+        chartId: 0, songId: null, groupId: 0,
+        name, artist: 'Clone Hero', album: null, genre: null, year: null,
+        charter: 'Clone Hero', song_length: null,
+        md5: key, chartHash: '', albumArtMd5: null, modifiedTime: '',
+        hasVideoBackground: false,
+        diff_guitar: null, diff_guitar_coop: null, diff_rhythm: null,
+        diff_bass: null, diff_drums: null, diff_drums_real: null,
+        diff_keys: null, diff_guitarghl: null, diff_guitar_coop_ghl: null,
+        diff_rhythm_ghl: null, diff_bassghl: null, diff_vocals: null, diff_band: null,
+        loading_phrase: null, icon: null, preview_start_time: null,
+      };
+      results.push({
+        md5: key, name, artist: 'Clone Hero', charter: 'Clone Hero',
+        status: 'done', percent: 100,
+        destinationPath: filePath, downloadedAt, chart,
+      });
+      continue;
+    }
+
     if (!entry.isDirectory()) continue;
     const folderPath = path.join(songsDir, entry.name);
 

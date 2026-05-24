@@ -29,6 +29,7 @@ const SENSITIVE_FIELDS = [
   'sessionSecret',
   'auth.google.clientId',
   'auth.google.clientSecret',
+  'tunnel.token',
 ] as const;
 
 const ENC_PREFIX = 'enc:';
@@ -194,6 +195,8 @@ export function generateDefaultConfig(): AppConfig {
     port: 4440,
     sessionSecret: randomUUID(),
     cloneHeroSongsDir: '',
+    cloneHeroInstallDir: '',
+    yargSongsDir: '',
     auth: {
       mode: 'none',
       google: {
@@ -206,6 +209,7 @@ export function generateDefaultConfig(): AppConfig {
     tunnel: {
       enabled: false,
       hostname: '',
+      token: '',
     },
     party: {
       enabled: false,
@@ -213,6 +217,7 @@ export function generateDefaultConfig(): AppConfig {
       defaultPermissions: {
         canBrowseSources: true,
         canBrowseLibrary: true,
+        canViewDownloads: true,
         canDownload: false,
         deleteMode: 'none' as GuestDeleteMode,
       },

@@ -10,8 +10,6 @@ Search the entire [Enchor.us](https://enchor.us) library, preview charts in-brow
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0) [![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org) [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev) [![TypeScript](https://img.shields.io/badge/TypeScript-6-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/X7X51XJ8RG)
-
 </div>
 
 ---
@@ -20,13 +18,13 @@ Search the entire [Enchor.us](https://enchor.us) library, preview charts in-brow
 
 Clone Sidekick is a self-hosted web app that runs on your PC (or a server) and gives you a browser-based interface to find and install custom charts for **Clone Hero**. Open it on your phone, tablet, Steam Deck browser, or any device on your network - search for a song, tap download, and it lands in your songs folder automatically. Then you just rescan in Clone Hero and rock out.
 
-It's perfect for couch sessions where you don't want to alt-tab out of Clone Hero to hunt for songs.
+It's perfect for couch sessions where you don't want to alt-tab out of Clone Hero to hunt for songs. You can even give friends limited temporary access!
 
 > Basically, my wife wanted to play Clone Hero from the couch and not get up to download songs. She wanted to be able to add them from her phone while we were playing. So I built Clone Sidekick to solve that problem. Now she can even add songs when she hears them out of the house (e.g. on the radio) and have them ready to play when she gets home.
 
 ### 🎸 Preview
 <div align="center">
-<img src="https://i.imgur.com/GNYFqZV.png" alt="Clone Sidekick Screenshot" width="900" />
+<img src="https://i.imgur.com/5LL3hwa.png" alt="Clone Sidekick Screenshot" width="900" />
 </div>
 
 ### 🔑 Key Highlights
@@ -36,6 +34,7 @@ It's perfect for couch sessions where you don't want to alt-tab out of Clone Her
 | 🔍 | **Full Enchor.us Search**   | Simple keyword search or 25+ advanced filters            |
 | 🎵 | **In-Browser Chart Preview**| Listen to and watch chart highways before downloading     |
 | ⬇️ | **One-Tap Downloads**       | Queue songs and they appear in your Clone Hero folder    |
+| 📚 | **Song Library**            | Browse, search, filter, and manage your installed charts |
 | 📱 | **Use Any Device**          | Responsive UI works on phones, tablets, and desktops     |
 | 🌐 | **Optional Remote Access**  | Cloudflare Tunnel support for secure access from anywhere|
 | 🔐 | **Google OAuth**            | Lock it down to specific Google accounts for WAN use     |
@@ -76,18 +75,23 @@ It's perfect for couch sessions where you don't want to alt-tab out of Clone Her
 
 ### 🎵 Chart Cards
 
-Every search result shows rich metadata at a glance:
+Every search result and library entry shows rich metadata at a glance:
 
 - 🖼️ **Album art** from the Enchor.us CDN
 - 🎤 **Song info** - name, artist, album, charter, genre, year, duration
-- 🎸 **Instrument badges** with **E/M/H/X difficulty pills** showing which difficulties are charted
+- 🎸 **Instrument badges** with colored tier labels (Expert/Hard/Medium/Easy), circular instrument icons, and Enchor-style intensity ratings — shown inline on desktop, in a footer row on mobile
 - 📊 **Expandable details** - note counts per instrument/difficulty, feature grid (solo sections, lyrics, forced notes, etc.), loading phrases, modification dates
-- ▶️ **Chart preview player** - plays a 30-second audio preview with a scrolling note highway, selectable instrument and difficulty
+- ▶️ **Chart preview player** - plays a 30-second audio preview with a scrolling note highway
 
 ### ⬇️ Download Manager
 
+<div align="center">
+<img src="https://i.imgur.com/YcfPFRD.png" alt="Clone Sidekick Downloads Page" width="900" />
+</div>
+
 - **Queue system** - download multiple charts back-to-back
 - **Real-time progress** - live percentage bar during download, status icons for each phase (⏳ Queued → ⬇️ Downloading → 📦 Extracting → ✅ Done)
+- **Install from URL** - paste a direct link to a `.sng` or `.zip` to download it without searching
 - **Two output formats:**
   - 📄 `.sng` - single packed file (smaller, modern format)
   - 📁 **Chart Folder** - extracted files (classic format)
@@ -99,16 +103,43 @@ Every search result shows rich metadata at a glance:
 - **Persistent history** - download list survives server restarts
 - **Library scanning** - on first run, scans your existing songs folder and populates the download list
 
+### 📚 Song Library
+
+<div align="center">
+<img src="https://i.imgur.com/6rrL2OD.png" alt="Clone Sidekick Downloads Page" width="900" />
+</div>
+
+A dedicated tab for browsing and managing everything already installed in your songs folder:
+
+- **Search** - filter by song name, artist, or charter
+- **Sort** - by artist, song name, charter, newest, or oldest
+- **Genre filter** - dropdown to narrow by genre
+- **Instrument filter** - toggle buttons to show only songs with specific instruments charted
+- **Rescan** - manually trigger a library rescan to pick up songs added outside the app
+- **YARG support** - if a YARG songs directory is configured, downloads are mirrored there automatically
+- **Random picker** - click 🎲 Random to get a surprise song suggestion from your filtered results
+
+<div align="center">
+<img src="https://i.imgur.com/5ywkMZ9.png" alt="Clone Sidekick Downloads Page" width="600" />
+</div>
+
+- **Bulk delete** - select mode with checkboxes to delete multiple songs at once, even default songs (admin only, with confirmation)
+
+<div align="center">
+<img src="https://i.imgur.com/EeLPyfD.png" alt="Clone Sidekick Downloads Page" width="900" />
+</div>
+
 ### ⚙️ Settings
 
 All settings can be changed after initial setup without restarting (except port):
 
 - **Songs Directory** - path to your Clone Hero songs folder with verification
+- **YARG Songs Directory** - optional secondary directory; charts are copied here after every Clone Hero download
 - **Download Format** - `.sng` file or extracted folder
 - **Video Backgrounds** - toggle downloading video backgrounds
 - **Authentication** - switch between no auth (LAN) and Google OAuth
 - **Google OAuth** - Client ID, Client Secret, Callback URL, allowed email list
-- **Cloudflare Tunnel** - enable/disable remote access with hostname configuration
+- **Cloudflare Tunnel** - enable/disable remote access with token and hostname configuration
 - **Party Mode** - enable guest access, set session duration, configure default permissions
 - **Server Port** - custom port (requires restart)
 
@@ -123,8 +154,9 @@ Party Mode lets you share temporary guest access with friends — no Google acco
 
    | Permission | What it allows |
    |:-----------|:---------------|
-   | 🔍 Browse Sources | Search Enchor.us for charts |
-   | 📚 Browse Library | View the download history tab |
+   | 🔍 Browse sources | Search Enchor.us for charts |
+   | 📚 Browse library | View the Library tab (read-only) |
+   | ⬇️ Browse downloads | View the Downloads tab (read-only) |
    | ⬇️ Download | Queue chart downloads to your songs folder |
    | 🗑️ Delete | None, their own downloads only, or any download |
 
@@ -312,16 +344,29 @@ Cloudflare Tunnel lets you securely expose Clone Sidekick to the internet withou
 
 ### Setting Up the Tunnel
 
+#### Step 1: Create a tunnel in Cloudflare Zero Trust
+
 1. **Install cloudflared:** [Download here](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)
 
-2. **Authenticate with Cloudflare:**
-   ```bash
-   cloudflared tunnel login
-   ```
+2. Go to the [Cloudflare Zero Trust Dashboard](https://one.dash.cloudflare.com/) → **Networks → Tunnels → Create a tunnel**
 
-3. **Enable the tunnel** in Clone Sidekick's setup wizard (or Settings → Remote Access) and enter your desired hostname (e.g., `guitar.example.com`)
+3. Choose **Cloudflared** as the connector type and give it a name (e.g., `clone-sidekick`)
 
-4. Clone Sidekick will automatically create the tunnel and configure DNS routing.
+4. Cloudflare will display a tunnel token — **copy it**. You'll paste it into Clone Sidekick's settings.
+
+5. Under **Public Hostname**, add a route pointing to `http://localhost:4440` (or whatever port Clone Sidekick runs on) with your desired subdomain (e.g., `guitar.example.com`).
+
+6. Save and finish the wizard.
+
+#### Step 2: Configure Clone Sidekick
+
+1. Open **Settings → Remote Access** in Clone Sidekick
+2. Select **Cloudflare Tunnel**
+3. Paste the **tunnel token** from Cloudflare
+4. Enter the **hostname** you configured (e.g., `guitar.example.com`)
+5. Save — Clone Sidekick will start the tunnel automatically on the next launch (or immediately if you restart)
+
+> ⚠️ `cloudflared` must be installed and accessible on your system PATH for the tunnel to start. Clone Sidekick launches it as a managed background process using your token.
 
 ### 🛡️ Securing Your Tunnel with Cloudflare Access
 
@@ -376,16 +421,15 @@ Instead of only checking email addresses, you can **restrict access by geographi
 ```
 ┌──────────────────────────────────────────────────────────┐
 │                      Browser (Any Device)                │
-│  ┌──────────┐  ┌──────────────┐  ┌───────────────────┐   │
-│  │  Search  │  │   Downloads  │  │     Settings      │   │
-│  │  Panel   │  │    Queue     │  │      Panel        │   │
-│  └────┬─────┘  └──────┬───────┘  └────────┬──────────┘   │
-│       │               │                   │              │
-│       └───────────────┼───────────────────┘              │
-│                       │  React 19 + Tailwind CSS         │
-└───────────────────────┼──────────────────────────────────┘
-                        │ HTTP / SSE
-┌───────────────────────┼──────────────────────────────────┐
+│  ┌──────────┐  ┌──────────────┐  ┌──────────┐  ┌──────┐ │
+│  │  Search  │  │   Downloads  │  │ Library  │  │ Sett │ │
+│  │  Panel   │  │    Queue     │  │  Panel   │  │ ings │ │
+│  └────┬─────┘  └──────┬───────┘  └────┬─────┘  └──┬───┘ │
+│       └───────────────┼───────────────┘           │     │
+│                       │  React 19 + Tailwind CSS  │     │
+└───────────────────────┼───────────────────────────┼─────┘
+                        │ HTTP / SSE                │
+┌───────────────────────┼───────────────────────────┼─────┐
 │                Express Server (:4440)                    │
 │  ┌────────────┐  ┌───────────┐  ┌─────────────────────┐  │
 │  │  Search    │  │ Download  │  │   Config Store      │  │
@@ -423,7 +467,9 @@ clone-sidekick/
 │   │   ├── components/
 │   │   │   ├── SearchPanel.tsx      # Search interface (simple + advanced)
 │   │   │   ├── ChartCard.tsx        # Chart result card with preview
+│   │   │   ├── InstrumentBadges.tsx # Shared instrument/intensity badge row
 │   │   │   ├── DownloadQueue.tsx    # Download manager & history
+│   │   │   ├── LibraryPanel.tsx     # Installed song browser with filters
 │   │   │   ├── SettingsPanel.tsx    # Settings page
 │   │   │   ├── PartyPanel.tsx       # Party Mode guest management UI
 │   │   │   ├── LoginGate.tsx        # OAuth / expired-guest login screen
@@ -442,7 +488,7 @@ clone-sidekick/
 │   │   ├── configStore.ts           # Encrypted config management
 │   │   ├── auth.ts                  # Google OAuth + guest session auth helpers
 │   │   ├── partyStore.ts            # Guest session creation, validation & revocation
-│   │   ├── tunnel.ts                # Cloudflare Tunnel management
+│   │   ├── tunnel.ts                # Cloudflare Tunnel managed process
 │   │   ├── persistence.ts           # Download history & songs dir scanning
 │   │   └── songIniCleaner.ts        # Metadata tag cleanup
 │   └── shared/
@@ -453,6 +499,8 @@ clone-sidekick/
 │   ├── downloads.json               # Download history
 │   └── party.json                   # Active guest sessions
 └── public/                      # Static assets
+    ├── instruments/                 # Instrument icon PNGs (mevami)
+    └── intensity/                   # Intensity rating PNGs (mevami)
 ```
 
 ---

@@ -7,7 +7,7 @@ import fs from 'fs/promises';
 import { createWriteStream } from 'fs';
 import path from 'path';
 import os from 'os';
-import { randomUUID } from 'crypto';
+import { randomUUID, createHash } from 'crypto';
 import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
 import { ReadableStream } from 'stream/web';
@@ -18,7 +18,7 @@ import { getChartDownloadStream } from './enchor.js';
 import { cleanAllSongInis } from './songIniCleaner.js';
 import { loadDownloads, scheduleSave, scanSongsDir } from './persistence.js';
 import { enrichSingle, needsEnrichment } from './enrichment.js';
-import type { DownloadProgress, DownloadStatus, ChartResult, UserInfo } from '../shared/types';
+import type { DownloadProgress, ChartResult } from '../shared/types';
 
 // ── In-memory state ─────────────────────────────────────────────
 
@@ -44,7 +44,7 @@ export async function initQueue(): Promise<void> {
 
     if (needsRescan && config.cloneHeroSongsDir) {
       // Re-scan to pick up enriched metadata; keep real (non-scan) downloads
-      const scanned = await scanSongsDir(config.cloneHeroSongsDir);
+      const scanned = await scanAllSongDirs();
       const scanMap = new Map(scanned.map(dp => [dp.md5, dp]));
       // Merge: prefer freshly scanned data for scan-* items, keep real downloads
       for (const [k, v] of saved) {
@@ -66,9 +66,9 @@ export async function initQueue(): Promise<void> {
     return;
   }
 
-  // First run or empty DB - scan songs dir as a starting point
+  // First run or empty DB - scan songs dirs as a starting point
   if (config.cloneHeroSongsDir) {
-    const scanned = await scanSongsDir(config.cloneHeroSongsDir);
+    const scanned = await scanAllSongDirs();
     for (const dp of scanned) queue.set(dp.md5, dp);
     scheduleSave(queue);
   }
@@ -117,6 +117,7 @@ const DEFAULT_DL_OPTS: DownloadOptions = { format: 'folder', skipVideo: true };
 
 const pendingOpts: Map<string, DownloadOptions> = new Map();
 const pendingCharts: Map<string, ChartResult> = new Map();
+const pendingUrlJobs: Map<string, string> = new Map(); // md5 key → source URL
 
 export function enqueueDownload(
   chart: ChartResult,
@@ -153,7 +154,102 @@ export function removeDownload(md5: string) {
   scheduleSave(queue);
 }
 
+/**
+ * Scan the user's songs directory AND the Clone Hero built-in songs directory
+ * ({installDir}/Clone Hero_Data/StreamingAssets/songs).
+ */
+async function scanAllSongDirs(): Promise<DownloadProgress[]> {
+  const songsDir = config.cloneHeroSongsDir;
+  if (!songsDir) return [];
+
+  // Clone Hero_Data is a sibling of the Songs folder
+  const defaultDir = path.join(path.dirname(songsDir), 'Clone Hero_Data', 'StreamingAssets', 'songs');
+  const toScan = [scanSongsDir(songsDir), scanSongsDir(defaultDir)];
+
+  const results = await Promise.all(toScan);
+  return results.flat();
+}
+
+/** Full sync of the queue against the songs directory on disk. */
+export async function rescanLibrary(): Promise<DownloadProgress[]> {
+  if (!config.cloneHeroSongsDir) return getQueueSnapshot();
+  const scanned = await scanAllSongDirs();
+
+  // Paths that physically exist on disk right now
+  const diskPaths = new Set(
+    scanned.map(dp => dp.destinationPath).filter(Boolean) as string[]
+  );
+
+  // Remove done entries whose folder was deleted from disk
+  for (const [key, dp] of queue) {
+    if (dp.status === 'done' && dp.destinationPath && !diskPaths.has(dp.destinationPath)) {
+      queue.delete(key);
+    }
+  }
+
+  // Deduplicate: if multiple queue entries share a destinationPath keep the
+  // non-scan- one (real Enchor md5 carries more metadata).
+  const pathToKey = new Map<string, string>();
+  for (const [key, dp] of queue) {
+    if (dp.status !== 'done' || !dp.destinationPath) continue;
+    const prev = pathToKey.get(dp.destinationPath);
+    if (!prev) {
+      pathToKey.set(dp.destinationPath, key);
+    } else if (key.startsWith('scan-')) {
+      queue.delete(key);
+    } else if (prev.startsWith('scan-')) {
+      queue.delete(prev);
+      pathToKey.set(dp.destinationPath, key);
+    }
+  }
+
+  // Paths already covered by surviving queue entries
+  const coveredPaths = new Set(
+    [...queue.values()]
+      .filter(dp => dp.status === 'done' && dp.destinationPath)
+      .map(dp => dp.destinationPath as string)
+  );
+
+  // Add newly discovered songs not yet tracked
+  for (const dp of scanned) {
+    if (dp.destinationPath && !coveredPaths.has(dp.destinationPath)) {
+      queue.set(dp.md5, dp);
+    }
+  }
+
+  scheduleSave(queue);
+  return getQueueSnapshot();
+}
+
+/** Download and install a chart from a direct URL (zip or sng). */
+export function enqueueUrlDownload(
+  url: string,
+  addedBy?: DownloadProgress['addedBy'],
+) {
+  const key = 'url-' + createHash('md5').update(url).digest('hex').slice(0, 12);
+  if (queue.has(key) && queue.get(key)!.status !== 'error') return;
+
+  const filename = url.split('/').pop()?.split('?')[0] ?? 'chart';
+  const dp: DownloadProgress = {
+    md5: key,
+    name: filename,
+    artist: 'URL Import',
+    charter: '—',
+    status: 'queued',
+    percent: null,
+    addedBy,
+  };
+
+  broadcast(dp);
+  pendingMd5s.push(key);
+  pendingOpts.set(key, DEFAULT_DL_OPTS);
+  pendingUrlJobs.set(key, url);
+  processQueue();
+}
+
 // ── Internal queue runner ───────────────────────────────────────
+
+const MAX_RETRIES = 3;
 
 async function processQueue() {
   if (processing) return;
@@ -169,10 +265,33 @@ async function processQueue() {
     pendingCharts.delete(md5);
     if (!chart) continue;
 
-    try {
-      await downloadAndInstall(md5, dp, chart, opts);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
+    let lastErr: unknown;
+    let succeeded = false;
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const srcUrl = pendingUrlJobs.get(md5);
+        if (attempt === 1) pendingUrlJobs.delete(md5);
+        if (srcUrl) {
+          await downloadAndInstallFromUrl(md5, dp, srcUrl, opts);
+        } else {
+          await downloadAndInstall(md5, dp, chart, opts);
+        }
+        succeeded = true;
+        break;
+      } catch (err: unknown) {
+        lastErr = err;
+        if (attempt < MAX_RETRIES) {
+          const delay = attempt * 2000;
+          console.warn(`  ⚠  Download attempt ${attempt}/${MAX_RETRIES} failed for "${dp.name}": ${err instanceof Error ? err.message : err}. Retrying in ${delay / 1000}s…`);
+          broadcast({ ...dp, status: 'downloading', percent: null, error: `Retrying… (attempt ${attempt + 1}/${MAX_RETRIES})` });
+          await new Promise(r => setTimeout(r, delay));
+        }
+      }
+    }
+
+    if (!succeeded) {
+      const msg = lastErr instanceof Error ? lastErr.message : String(lastErr);
       broadcast({ ...dp, status: 'error', error: msg });
     }
   }
@@ -220,29 +339,26 @@ async function downloadAndInstall(
   const actuallySkipVideo = opts.skipVideo && (chart.hasVideoBackground === true);
   const { body, contentLength } = await getChartDownloadStream(md5, actuallySkipVideo);
 
-  // Write .sng to disk while tracking progress
+  // Stream to disk via pipeline (handles backpressure + error propagation)
+  // while tracking progress via a passthrough counter.
   let downloaded = 0;
   const nodeStream = Readable.fromWeb(body as ReadableStream<Uint8Array>);
-
-  const progressStream = new Readable({
-    read() { /* pumped externally */ },
+  nodeStream.on('data', (chunk: Buffer) => {
+    downloaded += chunk.length;
+    const pct = contentLength > 0
+      ? Math.round((downloaded / contentLength) * 100)
+      : null;
+    broadcast({ ...dp, status: 'downloading', percent: pct });
   });
+  await pipeline(nodeStream, createWriteStream(sngPath));
 
-  // Pipe through a transform that tracks bytes
-  const writeStream = createWriteStream(sngPath);
-  await new Promise<void>((resolve, reject) => {
-    nodeStream.on('data', (chunk: Buffer) => {
-      downloaded += chunk.length;
-      const pct = contentLength > 0
-        ? Math.round((downloaded / contentLength) * 100)
-        : null;
-      broadcast({ ...dp, status: 'downloading', percent: pct });
-      writeStream.write(chunk);
-    });
-    nodeStream.on('end', () => { writeStream.end(); resolve(); });
-    nodeStream.on('error', reject);
-    writeStream.on('error', reject);
-  });
+  // Integrity check: if the server told us the size, verify we got it all
+  if (contentLength > 0) {
+    const { size } = await fs.stat(sngPath);
+    if (size !== contentLength) {
+      throw new Error(`Download incomplete: received ${size} of ${contentLength} bytes`);
+    }
+  }
 
   // ── Install chart ──────────────────────────────────────────
   broadcast({ ...dp, status: 'extracting', percent: null });
@@ -254,13 +370,19 @@ async function downloadAndInstall(
     // Extract .sng → chart folder
     await fs.mkdir(destDir, { recursive: true });
 
-    // .sng is actually a custom container format. We try using parse-sng first.
-    // If parse-sng isn't available, fall back to treating the .sng as a zip.
+    // .sng is the primary format from enchor.us. Try parse-sng first;
+    // fall back to ZIP only if parse-sng is unavailable (import error),
+    // which means some older charts were shipped as plain zips.
     try {
       await extractSng(sngPath, destDir);
-    } catch {
-      // Fallback: try extracting as a zip archive
-      await extractZip(sngPath, destDir);
+    } catch (sngErr: unknown) {
+      const msg = sngErr instanceof Error ? sngErr.message : String(sngErr);
+      // Only ZIP-fallback when parse-sng itself is missing, not when extraction fails
+      if (msg.includes('Cannot find') || msg.includes('MODULE_NOT_FOUND')) {
+        await extractZip(sngPath, destDir);
+      } else {
+        throw new Error(`Failed to extract chart: ${msg}`);
+      }
     }
 
     // ── Clean song.ini ────────────────────────────────────────
@@ -269,6 +391,18 @@ async function downloadAndInstall(
 
   // ── Cleanup temp ──────────────────────────────────────────
   await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+
+  // ── YARG dual-install ──────────────────────────────────────
+  const yargDir = config.yargSongsDir;
+  if (yargDir) {
+    try {
+      if (opts.format === 'sng') {
+        await fs.copyFile(destSng, path.join(yargDir, `${folderName}.sng`));
+      } else {
+        await fs.cp(destDir, path.join(yargDir, folderName), { recursive: true });
+      }
+    } catch { /* non-fatal — CH install already succeeded */ }
+  }
 
   broadcast({
     ...dp,
@@ -312,6 +446,97 @@ async function extractSng(sngPath: string, destDir: string) {
 
     sngStream.on('error', (err: unknown) => reject(err));
     sngStream.start();
+  });
+}
+
+async function downloadAndInstallFromUrl(
+  key: string,
+  dp: DownloadProgress,
+  url: string,
+  opts: DownloadOptions,
+) {
+  const songsDir = config.cloneHeroSongsDir;
+  if (!songsDir) throw new Error('CLONE_HERO_SONGS_DIR is not configured');
+
+  broadcast({ ...dp, status: 'downloading', percent: 0 });
+
+  const tmpDir = path.join(os.tmpdir(), `clone-sidekick-${randomUUID()}`);
+  await fs.mkdir(tmpDir, { recursive: true });
+
+  // Detect extension from URL path (before any query string)
+  const urlPath = new URL(url).pathname;
+  const ext = path.extname(urlPath).toLowerCase() || '.sng';
+  const tmpFile = path.join(tmpDir, `download${ext}`);
+
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`);
+  const contentLength = parseInt(res.headers.get('content-length') ?? '0', 10);
+
+  let downloaded = 0;
+  const nodeStream = Readable.fromWeb(res.body as ReadableStream<Uint8Array>);
+  nodeStream.on('data', (chunk: Buffer) => {
+    downloaded += chunk.length;
+    const pct = contentLength > 0 ? Math.round((downloaded / contentLength) * 100) : null;
+    broadcast({ ...dp, status: 'downloading', percent: pct });
+  });
+  await pipeline(nodeStream, createWriteStream(tmpFile));
+
+  if (contentLength > 0) {
+    const { size } = await fs.stat(tmpFile);
+    if (size !== contentLength) {
+      throw new Error(`Download incomplete: received ${size} of ${contentLength} bytes`);
+    }
+  }
+
+  broadcast({ ...dp, status: 'extracting', percent: null });
+
+  // Use the URL filename (without extension) as the folder name
+  const baseName = sanitize(path.basename(urlPath, ext) || key, { replacement: '_' });
+
+  const destDir2 = path.join(songsDir, baseName);
+  const destSng2 = path.join(songsDir, `${baseName}.sng`);
+  const destPath = opts.format === 'sng' ? destSng2 : destDir2;
+
+  if (opts.format === 'sng') {
+    await fs.copyFile(tmpFile, destSng2);
+  } else {
+    await fs.mkdir(destDir2, { recursive: true });
+    if (ext === '.sng') {
+      try {
+        await extractSng(tmpFile, destDir2);
+      } catch (sngErr: unknown) {
+        const msg = sngErr instanceof Error ? sngErr.message : String(sngErr);
+        if (msg.includes('Cannot find') || msg.includes('MODULE_NOT_FOUND')) {
+          await extractZip(tmpFile, destDir2);
+        } else {
+          throw new Error(`Failed to extract chart: ${msg}`);
+        }
+      }
+    } else {
+      await extractZip(tmpFile, destDir2);
+    }
+    await cleanAllSongInis(destDir2);
+  }
+
+  await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+
+  const yargDir = config.yargSongsDir;
+  if (yargDir) {
+    try {
+      if (opts.format === 'sng') {
+        await fs.copyFile(destSng2, path.join(yargDir, `${baseName}.sng`));
+      } else {
+        await fs.cp(destDir2, path.join(yargDir, baseName), { recursive: true });
+      }
+    } catch { /* non-fatal */ }
+  }
+
+  broadcast({
+    ...dp,
+    status: 'done',
+    percent: 100,
+    destinationPath: destPath,
+    downloadedAt: new Date().toISOString(),
   });
 }
 
